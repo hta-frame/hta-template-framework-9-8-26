@@ -1,0 +1,1448 @@
+<html>
+<head>
+<title>Enter Your Title Here</title>
+<HTA:APPLICATION
+    APPLICATIONNAME="GenericSupportTool"
+    ID="GenericSupportToolHTA"
+    ICON="AppIcon.ico"
+    BORDER="thin"
+    CAPTION="yes"
+    SHOWINTASKBAR="yes"
+    SINGLEINSTANCE="yes"
+    SCROLL="yes"
+    WIDTH="820"
+    HEIGHT="780"
+/>
+<style>
+    /* ============================================================
+       Brand palette: E61231 (red), #1F2A44 (navy), #FFFFFF, #000000.
+       #38435D / #47526C / #152038 / #1A2438 / #B80E27 are tints/shades
+       derived from the navy and red for hover/inactive states only --
+       not distinct brand colors. Section coding: Tab 1 = red,
+       Tab 2 = navy, Category 2 (Severity Templates) = black.
+       ============================================================ */
+    * { box-sizing: border-box; }
+    body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        font-size: 13px;
+        margin: 0;
+        padding: 0;
+        background: #f2f3f5;
+        color: #000000;
+    }
+    #appHeader {
+        background: #1F2A44;
+        color: #fff;
+        padding: 16px 24px;
+    }
+    #appHeader h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+    }
+    .header-btn-group { display: flex; gap: 8px; align-items: center; }
+    .icon-btn {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: #38435D;
+        color: #fff;
+        border: none;
+        font-weight: 700;
+        font-size: 14px;
+        cursor: pointer;
+    }
+    .icon-btn:hover { background: #47526C; }
+    .dev-btn {
+        background: #38435D;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        padding: 7px 14px;
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    .dev-btn:hover { background: #47526C; }
+
+    .panel-header.grey { background: #000000; }
+    .info-box h3 { margin: 18px 0 6px 0; font-size: 14px; }
+    .info-box ul, .info-box ol { margin: 4px 0; padding-left: 22px; }
+    .info-box li { margin-bottom: 4px; }
+    .info-box code {
+        background: #f2f3f5;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+    }
+    .close-btn {
+        background: #38435D;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        padding: 8px 18px;
+        cursor: pointer;
+        font-weight: 600;
+        margin-top: 16px;
+    }
+    .close-btn:hover { background: #47526C; }
+    #categoryNav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 14px 24px 0 24px;
+        background: #1F2A44;
+    }
+    .cat-btn-group { display: flex; gap: 8px; }
+    .cat-btn {
+        padding: 10px 22px;
+        border: none;
+        border-radius: 6px 6px 0 0;
+        font-size: 13.5px;
+        font-weight: 700;
+        cursor: pointer;
+        background: #152038;
+        color: #9099a8;
+    }
+    .cat-btn.active { background: #FFFFFF; color: #1F2A44; }
+
+    #subNavGeneral, #subNavSeverity {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 12px 24px 0 24px;
+        background: #1F2A44;
+    }
+    .tab-btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 6px 6px 0 0;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        background: #38435D;
+        color: #ccc;
+    }
+    .tab-btn-red.active { background: #E61231; color: #fff; }
+    .tab-btn-blue.active { background: #1F2A44; color: #fff; }
+    .tab-btn-purple.active { background: #000000; color: #fff; }
+
+    .panel {
+        max-width: 760px;
+        margin: 24px auto;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+        overflow: hidden;
+    }
+    .panel-header { padding: 18px 24px; color: #fff; }
+    .panel-header.red { background: #E61231; }
+    .panel-header.blue { background: #1F2A44; }
+    .panel-header.purple { background: #000000; }
+    .panel-header h2 { margin: 0 0 4px 0; font-size: 17px; }
+    .panel-header p { margin: 0; font-size: 12.5px; opacity: 0.9; }
+
+    .panel-body { padding: 20px 24px; }
+
+    .field { margin-bottom: 14px; }
+    .field label {
+        display: block;
+        margin-bottom: 4px;
+        font-weight: 600;
+        font-size: 12.5px;
+        color: #000000;
+    }
+    .field input[type=text], .field select, .field textarea {
+        width: 100%;
+        max-width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 13px;
+        font-family: inherit;
+    }
+    .field select { box-sizing: border-box; }
+    .field textarea { resize: vertical; min-height: 120px; }
+
+    .error-box {
+        display: none;
+        background: #FCE7EA;
+        border: 1px solid #E61231;
+        color: #E61231;
+        padding: 10px 14px;
+        border-radius: 4px;
+        margin-bottom: 14px;
+        font-weight: 600;
+    }
+    .error-box.blue-theme { background: #E7EAF0; border-color: #1F2A44; color: #1F2A44; }
+    .error-box.purple-theme { background: #ECECEC; border-color: #000000; color: #000000; }
+
+    .btn {
+        border: none;
+        border-radius: 4px;
+        padding: 10px 22px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #fff;
+        cursor: pointer;
+    }
+    .btn-red { background: #E61231; }
+    .btn-red:hover { background: #B80E27; }
+    .btn-blue { background: #1F2A44; }
+    .btn-blue:hover { background: #161E30; }
+    .btn-purple { background: #000000; }
+    .btn-purple:hover { background: #262626; }
+
+    .log-note { font-size: 12px; color: #666; margin: 6px 0 4px 0; }
+    .ticket-count {
+        display: inline-block;
+        margin-top: 6px;
+        padding: 2px 10px;
+        border-radius: 10px;
+        background: #ECECEC;
+        color: #000000;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .field input[type=file] {
+        width: 100%;
+        padding: 6px 0;
+        font-size: 12.5px;
+    }
+
+    .status-msg { margin-top: 10px; font-size: 12.5px; color: #2e7d32; font-weight: 600; }
+
+    table.log-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+        font-size: 12.5px;
+    }
+    table.log-table th {
+        background: #1F2A44;
+        color: #fff;
+        text-align: left;
+        padding: 8px 10px;
+    }
+    table.log-table td {
+        padding: 7px 10px;
+        border-bottom: 1px solid #eee;
+    }
+    table.log-table tr:nth-child(even) { background: #fafafa; }
+
+    .section-title {
+        margin: 22px 0 8px 0;
+        font-size: 14px;
+        font-weight: 700;
+        color: #000000;
+        border-top: 1px solid #eee;
+        padding-top: 16px;
+    }
+
+    #appFooter {
+        text-align: center;
+        font-size: 11.5px;
+        color: #666;
+        padding: 14px 24px 20px 24px;
+    }
+</style>
+
+<script language="VBScript">
+
+' ============================================================
+' Configuration -- edit these to match your environment
+' ============================================================
+
+' ---- Tab 2 email addresses -----------------------------------------
+' Who gets the Tab 2 email (Category 1). Separate each address with a
+' semicolon ( ; ) -- no spaces needed. These go out on every Tab 2
+' email, so keep the lists current.
+'   Tab2ToEmails = main recipients (the "To" line)
+'   Tab2CcEmails = everyone who should just be copied (the "Cc" line)
+Dim Tab2ToEmails, Tab2CcEmails
+Tab2ToEmails = "recipient1@example.com;recipient2@example.com;recipient3@example.com;recipient4@example.com;recipient5@example.com" ' placeholder To recipients for Tab 2 emails
+Tab2CcEmails = "cc1@example.com;cc2@example.com;cc3@example.com;cc4@example.com;cc5@example.com" ' placeholder CC recipients for Tab 2 emails
+
+' ---- Category 2 (Severity Templates): names, descriptions, and who to email ----
+' One line per template (Category 2, slots 1-5). Each line sets three
+' things for that tab:
+'   SevTabName(#)  = the tab's button/title text
+'   SevTabDesc(#)  = the short description shown under the title
+'   SevTabEmail(#) = the ONE email address that tab's "Generate Email"
+'                    button sends to (only one address per template --
+'                    not a semicolon list like Tab2ToEmails above)
+Dim SevTabName(5), SevTabDesc(5), SevTabEmail(5)
+SevTabName(1) = "Enter Your Tab 1 Here" : SevTabDesc(1) = "Enter your description here." : SevTabEmail(1) = "team1@example.com" ' Tab 1 recipient
+SevTabName(2) = "Enter Your Tab 2 Here" : SevTabDesc(2) = "Enter your description here." : SevTabEmail(2) = "team2@example.com" ' Tab 2 recipient
+SevTabName(3) = "Enter Your Tab 3 Here" : SevTabDesc(3) = "Enter your description here." : SevTabEmail(3) = "team3@example.com" ' Tab 3 recipient
+SevTabName(4) = "Enter Your Tab 4 Here" : SevTabDesc(4) = "Enter your description here." : SevTabEmail(4) = "team4@example.com" ' Tab 4 recipient
+SevTabName(5) = "Enter Your Tab 5 Here" : SevTabDesc(5) = "Enter your description here." : SevTabEmail(5) = "team5@example.com" ' Tab 5 recipient
+
+' Optional custom intro paragraph per tab (used instead of the generic "<b>Tab Name</b>" heading).
+' Leave an entry blank ("") to fall back to the generic heading.
+Dim SevTabIntro(5)
+' (none set by default -- all 5 tabs fall back to the generic "<b>Tab Name</b>" heading)
+
+' Basic deterrent only -- this file is plain text, so anyone can open it in
+' Notepad and read this password (or just delete the check). Not real security.
+Dim DevNotesPassword
+DevNotesPassword = "changeme123"
+
+Dim gLogFilePath, gNextLogID, gFso, gLastPanelID
+Set gFso = CreateObject("Scripting.FileSystemObject")
+gLastPanelID = "tab1"
+
+' ============================================================
+' START: LoadSignature -- reads the user's default "New Message"
+' signature straight off disk, instead of asking Outlook for it.
+' ============================================================
+'
+' Why this exists: the normal way to get the signature is to let Outlook
+' insert it on its own -- Display() opens the compose window, then the
+' script reads objMail.HTMLBody (which by then already has the signature
+' in it) and prepends its own text to that. Some organizations' policy
+' blocks that: HTMLBody never picks up the signature, no matter how long
+' the script waits, so the email goes out blank or signature-less.
+'
+' The workaround: Outlook ALWAYS writes every signature to a plain .htm
+' file on disk, at:
+'     %APPDATA%\Microsoft\Signatures\<Signature Name>.htm
+' and it separately remembers, in the registry, which signature is the
+' default for new messages:
+'     HKCU\Software\Microsoft\Office\<version>\Common\MailSettings\NewSignature
+' So this function (1) reads that registry value to get the signature's
+' NAME, then (2) reads that .htm file's contents directly off disk. Since
+' neither step touches Outlook's Object Model, the policy above never
+' comes into play.
+'
+' Returns: the signature as an HTML string, ready to append to another
+' email's body (just the inside of its <body>...</body>, so we don't end
+' up nesting a second <html>/<head> inside the message). Returns "" if no
+' default signature is configured, or its file can't be found -- callers
+' should treat that as "no signature," not an error; the email still
+' works fine, it just won't have one.
+Function LoadSignature()
+    On Error Resume Next
+    LoadSignature = ""
+
+    Dim shell
+    Set shell = CreateObject("WScript.Shell")
+
+    ' The registry key lives under a version-specific path. Try the
+    ' versions likely to be installed (16.0 = Office 2016/2019/2021/365,
+    ' 15.0 = Office 2013, 14.0 = Office 2010) until one has a value set.
+    Dim officeVersions, verIndex, sigName
+    officeVersions = Array("16.0", "15.0", "14.0")
+    sigName = ""
+    For verIndex = 0 To UBound(officeVersions)
+        Err.Clear
+        sigName = shell.RegRead("HKCU\Software\Microsoft\Office\" & officeVersions(verIndex) & "\Common\MailSettings\NewSignature")
+        If Err.Number = 0 And Trim(sigName) <> "" Then Exit For
+        sigName = ""
+    Next
+    If sigName = "" Then Exit Function ' no default "new message" signature configured
+
+    Dim sigFilePath
+    sigFilePath = shell.ExpandEnvironmentStrings("%APPDATA%") & "\Microsoft\Signatures\" & sigName & ".htm"
+    If Not gFso.FileExists(sigFilePath) Then Exit Function
+
+    ' Read with ADODB.Stream rather than FileSystemObject, so accented
+    ' letters and other non-ASCII characters in the signature come through
+    ' correctly -- Outlook saves these files as UTF-8, and FSO's plain
+    ' text reader assumes the system codepage instead and can mangle them.
+    Dim stream, rawHtml
+    Set stream = CreateObject("ADODB.Stream")
+    stream.Type = 2 ' adTypeText
+    stream.Charset = "utf-8"
+    stream.Open
+    stream.LoadFromFile sigFilePath
+    rawHtml = stream.ReadText
+    stream.Close
+
+    ' Pull out just the <body>...</body> contents, so this can be dropped
+    ' straight into another email's HTMLBody.
+    Dim re, matches
+    Set re = New RegExp
+    re.Pattern = "<body[^>]*>([\s\S]*)<\/body>"
+    re.IgnoreCase = True
+    If re.Test(rawHtml) Then
+        Set matches = re.Execute(rawHtml)
+        LoadSignature = matches(0).SubMatches(0)
+    Else
+        LoadSignature = rawHtml ' couldn't find a <body> tag -- fall back to the whole file
+    End If
+End Function
+' ============================================================
+' END: LoadSignature
+' ============================================================
+
+' ============================================================
+' START: SendViaOutlook -- builds a complete Outlook draft (body,
+' signature, recipients, attachments) and displays it for review.
+' ============================================================
+Function SendViaOutlook(strTo, strCc, strSubject, strBodyHtml, strAttachmentPath, arrExtraAttachments)
+    On Error Resume Next
+    Dim objOutlook, objMail
+    SendViaOutlook = False
+
+    Set objOutlook = CreateObject("Outlook.Application")
+    If Err.Number <> 0 Then
+        MsgBox "Could not connect to Outlook. Is it installed?"
+        Exit Function
+    End If
+
+    Set objMail = objOutlook.CreateItem(0) ' olMailItem
+
+    ' Force HTML format explicitly. If the Outlook profile's default
+    ' compose format is Plain Text or Rich Text (common under a corporate
+    ' policy/DLP setting), setting .HTMLBody below has no visible effect --
+    ' the compose window keeps rendering the plain-text Body, and the
+    ' draft appears completely blank even though HTMLBody was "set"
+    ' successfully. Forcing olFormatHTML (2) here guarantees HTMLBody is
+    ' actually what gets displayed and edited.
+    objMail.BodyFormat = 2 ' olFormatHTML
+
+    ' Build the whole body ourselves -- our own content plus the signature
+    ' from LoadSignature() -- instead of relying on Outlook to insert the
+    ' signature after the fact. This also means we no longer need to open
+    ' the compose window first and wait/race for HTMLBody to be ready
+    ' before touching it: everything below can be set before Display().
+    objMail.HTMLBody = strBodyHtml & LoadSignature()
+
+    objMail.To = strTo
+    If strCc <> "" Then objMail.CC = strCc
+    objMail.Subject = strSubject
+
+    ' NOTE: we deliberately do NOT call objMail.Recipients.ResolveAll here.
+    ' Programmatic access to Recipients can trigger Outlook's "Object Model
+    ' Guard" security prompt (some antivirus/Outlook configs show a "program
+    ' is trying to access..." warning). If that dialog opens off-screen or
+    ' behind another window, this synchronous call blocks forever and
+    ' freezes the whole single-threaded HTA -- including tab switching,
+    ' since nothing else can run until the hidden dialog is dismissed. To/CC
+    ' still resolve normally (on their own) once the user clicks into the
+    ' field or hits Send -- there's no safe way to force that early.
+
+    If Trim(strAttachmentPath) <> "" Then
+        If gFso.FileExists(strAttachmentPath) Then
+            objMail.Attachments.Add strAttachmentPath
+        End If
+    End If
+
+    ' arrExtraAttachments holds additional attachment paths (e.g. Tab 2's
+    ' "Add Attachments" queue), since Attachments.Add only takes one path
+    ' per call. Pass Array() when there are none.
+    Dim i
+    For i = LBound(arrExtraAttachments) To UBound(arrExtraAttachments)
+        If Trim(arrExtraAttachments(i)) <> "" Then
+            If gFso.FileExists(arrExtraAttachments(i)) Then
+                objMail.Attachments.Add arrExtraAttachments(i)
+            End If
+        End If
+    Next
+
+    ' Everything (body, signature, recipients, attachments) is already
+    ' filled in, so Display() now just shows the finished draft -- no more
+    ' waiting on Outlook's own signature-loading timing.
+    objMail.Display
+
+    Set objMail = Nothing
+    Set objOutlook = Nothing
+
+    SendViaOutlook = True
+End Function
+' ============================================================
+' END: SendViaOutlook
+' ============================================================
+
+' ============================================================
+' Category switching (Category 1 <-> Category 2)
+' ============================================================
+Sub SetCategoryButtonState(btn, isActive)
+    On Error Resume Next
+    If isActive Then
+        btn.style.backgroundColor = "#ffffff"
+        btn.style.color = "#1F2A44"
+    Else
+        btn.style.backgroundColor = "#152038"
+        btn.style.color = "#9099a8"
+    End If
+End Sub
+
+Sub ShowCategoryGeneral
+    On Error Resume Next
+    document.getElementById("subNavGeneral").style.display = "flex"
+    document.getElementById("subNavSeverity").style.display = "none"
+    SetCategoryButtonState document.getElementById("catBtnGeneral"), True
+    SetCategoryButtonState document.getElementById("catBtnSeverity"), False
+    ShowTab1
+End Sub
+
+Sub ShowCategorySeverity
+    On Error Resume Next
+    document.getElementById("subNavGeneral").style.display = "none"
+    document.getElementById("subNavSeverity").style.display = "flex"
+    SetCategoryButtonState document.getElementById("catBtnGeneral"), False
+    SetCategoryButtonState document.getElementById("catBtnSeverity"), True
+    ShowSevTab 1
+End Sub
+
+' ============================================================
+' Tab switching
+' ============================================================
+Sub HideAllPanels
+    On Error Resume Next
+    document.getElementById("tab1").style.display = "none"
+    document.getElementById("tab2").style.display = "none"
+    Dim i
+    For i = 1 To 5
+        document.getElementById("sevTab" & i).style.display = "none"
+    Next
+    document.getElementById("howToPanel").style.display = "none"
+    document.getElementById("devNotesPanel").style.display = "none"
+End Sub
+
+Sub ShowPanel(panelID)
+    On Error Resume Next
+    HideAllPanels
+    document.getElementById(panelID).style.display = "block"
+    gLastPanelID = panelID
+End Sub
+
+' Sets the active/inactive look directly via inline style, rather than
+' relying on a compound CSS class selector (e.g. ".tab-btn-red.active"),
+' which isn't reliably matched by the older IE rendering engine mshta uses.
+Sub SetTabButtonState(btn, isActive, activeColor)
+    On Error Resume Next
+    If isActive Then
+        btn.style.backgroundColor = activeColor
+        btn.style.color = "#ffffff"
+    Else
+        btn.style.backgroundColor = "#38435D"
+        btn.style.color = "#cccccc"
+    End If
+End Sub
+
+Sub ShowTab1
+    On Error Resume Next
+    ShowPanel "tab1"
+    SetTabButtonState document.getElementById("tabBtn1"), True, "#E61231"
+    SetTabButtonState document.getElementById("tabBtn2"), False, "#1F2A44"
+End Sub
+
+Sub ShowTab2
+    On Error Resume Next
+    ShowPanel "tab2"
+    SetTabButtonState document.getElementById("tabBtn1"), False, "#E61231"
+    SetTabButtonState document.getElementById("tabBtn2"), True, "#1F2A44"
+End Sub
+
+Sub ShowSevTab(idx)
+    On Error Resume Next
+    ShowPanel "sevTab" & idx
+    Dim i, btn
+    For i = 1 To 5
+        Set btn = document.getElementById("tabBtnSv" & i)
+        SetTabButtonState btn, (i = idx), "#000000"
+    Next
+End Sub
+
+Sub ShowSevTab1 : ShowSevTab 1 : End Sub
+Sub ShowSevTab2 : ShowSevTab 2 : End Sub
+Sub ShowSevTab3 : ShowSevTab 3 : End Sub
+Sub ShowSevTab4 : ShowSevTab 4 : End Sub
+Sub ShowSevTab5 : ShowSevTab 5 : End Sub
+
+' ============================================================
+' Shared helpers
+' ============================================================
+Sub MarkError(ctrl)
+    ctrl.style.borderColor = "#E61231"
+    ctrl.style.backgroundColor = "#FCE7EA"
+End Sub
+
+Sub ClearError(ctrl)
+    ctrl.style.borderColor = "#ccc"
+    ctrl.style.backgroundColor = "#fff"
+End Sub
+
+' ============================================================
+' TAB 1 (Category 1)
+' ============================================================
+Sub ResetErrors1
+    ClearError document.getElementById("ctrlID")
+    ClearError document.getElementById("ctrlTicket1")
+    ClearError document.getElementById("ctrlAgent")
+    document.getElementById("err1").style.display = "none"
+End Sub
+
+Sub ValidateAndSend1
+    On Error Resume Next
+    Dim hasError
+    hasError = False
+    ResetErrors1
+
+    Dim ctrlID, ctrlTicket, ctrlAgent
+    Set ctrlID = document.getElementById("ctrlID")
+    Set ctrlTicket = document.getElementById("ctrlTicket1")
+    Set ctrlAgent = document.getElementById("ctrlAgent")
+
+    If Trim(ctrlID.value) = "" Then
+        MarkError ctrlID
+        hasError = True
+    End If
+    If Trim(ctrlTicket.value) = "" Then
+        MarkError ctrlTicket
+        hasError = True
+    End If
+    If ctrlAgent.value = "" Then
+        MarkError ctrlAgent
+        hasError = True
+    End If
+
+    If hasError Then
+        document.getElementById("err1").innerText = "Please fill in all required fields (highlighted in red)."
+        document.getElementById("err1").style.display = "block"
+        Exit Sub
+    End If
+
+    Dim agentOption, agentEmail, agentName
+    Set agentOption = ctrlAgent.options(ctrlAgent.selectedIndex)
+    agentEmail = ctrlAgent.value
+    agentName = agentOption.getAttribute("data-name")
+
+    ' The email goes to the ticket owner identified by "Enter ID", PLUS the
+    ' selected agent's email (from the Choose Agent dropdown) -- both go on
+    ' the "To" line, semicolon-separated, so the agent is included on the
+    ' email they've been assigned to, not just named in the body text.
+    ' ctrlID.value is passed to Outlook as-is (no domain appended) so
+    ' Outlook resolves it against Active Directory/the GAL.
+    Dim recipientEmail
+    recipientEmail = ctrlID.value & ";" & agentEmail
+
+    Dim subj, body
+    subj = "URGENT: Ticket #" & ctrlTicket.value & " - ID " & ctrlID.value
+    body = "<p>Greetings,</p>" & _
+           "<p>Your help desk ticket, " & ctrlTicket.value & ", has been assigned to the following agent: " & agentName & ".</p>" & _
+           "<p>" & agentName & " should contact you shortly regarding your issue. The best way to contact the agent is through Microsoft Teams or email.</p>" & _
+           "<p>The queue manager will review the ticket and may contact you to appropriately evaluate the priority of this issue.</p>" & _
+           "<p>Have a nice day!</p>"
+
+    If SendViaOutlook(recipientEmail, "", subj, body, "", Array()) Then
+        LogEmail ctrlTicket.value, agentName, agentEmail
+        document.getElementById("status1").innerText = "Email draft opened and logged."
+        ctrlID.value = ""
+        ctrlTicket.value = ""
+        ctrlAgent.selectedIndex = 0
+    End If
+End Sub
+
+' ============================================================
+' Log handling (persisted to EmailLog.csv next to this HTA)
+' ============================================================
+Function ScriptFolder
+    Dim p
+    p = document.location.pathname
+    p = Replace(p, "/", "\")
+    If Left(p, 1) = "\" Then p = Mid(p, 2)
+    ScriptFolder = Left(p, InStrRev(p, "\"))
+End Function
+
+Sub InitLog
+    On Error Resume Next
+    gLogFilePath = ScriptFolder() & "EmailLog.csv"
+    gNextLogID = 1
+
+    If Not gFso.FileExists(gLogFilePath) Then
+        Dim newFile
+        Set newFile = gFso.CreateTextFile(gLogFilePath, True)
+        newFile.WriteLine "LogID,TicketNumber,AgentName,AgentEmail,Timestamp"
+        newFile.Close
+        Exit Sub
+    End If
+
+    Dim f, line, parts, maxID
+    maxID = 0
+    Set f = gFso.OpenTextFile(gLogFilePath, 1) ' ForReading
+    If Not f.AtEndOfStream Then f.ReadLine ' skip header
+    Do While Not f.AtEndOfStream
+        line = f.ReadLine
+        If Trim(line) <> "" Then
+            parts = Split(line, ",")
+            If UBound(parts) >= 4 Then
+                AddLogRow parts(0), parts(1), parts(2), parts(3)
+                If CLng(parts(0)) > maxID Then maxID = CLng(parts(0))
+            End If
+        End If
+    Loop
+    f.Close
+    gNextLogID = maxID + 1
+End Sub
+
+Sub LogEmail(ticketNum, agentName, agentEmail)
+    On Error Resume Next
+    Dim f, line, ts
+    ts = Now
+    line = gNextLogID & "," & ticketNum & "," & agentName & "," & agentEmail & "," & ts
+
+    Set f = gFso.OpenTextFile(gLogFilePath, 8, True) ' ForAppending
+    f.WriteLine line
+    f.Close
+
+    AddLogRow gNextLogID, ticketNum, agentName, agentEmail
+    gNextLogID = gNextLogID + 1
+End Sub
+
+Sub AddLogRow(logID, ticketNum, agentName, agentEmail)
+    On Error Resume Next
+    Dim tbody, row
+    Set tbody = document.getElementById("logBody")
+
+    ' Using createElement("tr") + innerHTML is unreliable in the HTA/old-IE
+    ' rendering engine -- table rows/cells must be built with insertRow/insertCell.
+    Set row = tbody.insertRow(-1)
+    row.insertCell(-1).innerText = logID
+    row.insertCell(-1).innerText = ticketNum
+    row.insertCell(-1).innerText = agentName
+    row.insertCell(-1).innerText = agentEmail
+End Sub
+
+' ============================================================
+' TAB 2 (Category 1)
+' ============================================================
+
+' Attachment queue for Tab 2's form. Outlook's Attachments.Add only
+' takes one path per call, so files are queued here (up to 10) and
+' added one-by-one in SendViaOutlook via the arrExtraAttachments param.
+Dim gTab2Attachments(9), gTab2AttachmentCount
+gTab2AttachmentCount = 0
+
+Sub AddTab2Attachment
+    On Error Resume Next
+    Dim ctrlFile, p
+    Set ctrlFile = document.getElementById("ctrlTab2File")
+    p = Trim(ctrlFile.value)
+    If p = "" Then Exit Sub
+
+    If Not gFso.FileExists(p) Then
+        MsgBox "File not found: " & p
+        Exit Sub
+    End If
+    If gTab2AttachmentCount >= 10 Then
+        MsgBox "Maximum of 10 attachments."
+        Exit Sub
+    End If
+
+    gTab2Attachments(gTab2AttachmentCount) = p
+    gTab2AttachmentCount = gTab2AttachmentCount + 1
+    ctrlFile.value = ""
+    RefreshTab2AttachList
+End Sub
+
+Sub ClearTab2Attachments
+    On Error Resume Next
+    gTab2AttachmentCount = 0
+    document.getElementById("ctrlTab2File").value = ""
+    RefreshTab2AttachList
+End Sub
+
+Sub RefreshTab2AttachList
+    On Error Resume Next
+    Dim i, txt
+    txt = ""
+    For i = 0 To gTab2AttachmentCount - 1
+        If txt <> "" Then txt = txt & "; "
+        txt = txt & gFso.GetFileName(gTab2Attachments(i))
+    Next
+    If txt = "" Then txt = "No attachments added."
+    document.getElementById("tab2AttachList").innerText = txt
+End Sub
+
+' Builds a properly-sized array (0 to gTab2AttachmentCount-1) to hand to
+' SendViaOutlook -- gTab2Attachments itself is always dimensioned to 10.
+Function GetTab2AttachmentArray
+    On Error Resume Next
+    Dim arr(), i
+    If gTab2AttachmentCount > 0 Then
+        ReDim arr(gTab2AttachmentCount - 1)
+        For i = 0 To gTab2AttachmentCount - 1
+            arr(i) = gTab2Attachments(i)
+        Next
+    Else
+        arr = Array()
+    End If
+    GetTab2AttachmentArray = arr
+End Function
+
+Sub ResetErrors2
+    ClearError document.getElementById("ctrlTicket2")
+    ClearError document.getElementById("ctrlProblem")
+    ClearError document.getElementById("ctrlUserID")
+    ClearError document.getElementById("ctrlDetails")
+    ClearError document.getElementById("ctrlOriginalTicket")
+    document.getElementById("err2").style.display = "none"
+End Sub
+
+Sub ValidateAndSend2
+    On Error Resume Next
+    Dim hasError
+    hasError = False
+    ResetErrors2
+
+    Dim ctrlTicket2, ctrlProblem, ctrlUserID, ctrlErrorMsg, ctrlDetails, ctrlOriginalTicket
+    Set ctrlTicket2 = document.getElementById("ctrlTicket2")
+    Set ctrlProblem = document.getElementById("ctrlProblem")
+    Set ctrlUserID = document.getElementById("ctrlUserID")
+    Set ctrlErrorMsg = document.getElementById("ctrlErrorMsg") ' optional field
+    Set ctrlDetails = document.getElementById("ctrlDetails")
+    Set ctrlOriginalTicket = document.getElementById("ctrlOriginalTicket")
+
+    If Trim(ctrlTicket2.value) = "" Then
+        MarkError ctrlTicket2
+        hasError = True
+    End If
+    If Trim(ctrlProblem.value) = "" Then
+        MarkError ctrlProblem
+        hasError = True
+    End If
+    If Trim(ctrlUserID.value) = "" Then
+        MarkError ctrlUserID
+        hasError = True
+    End If
+    If Trim(ctrlDetails.value) = "" Then
+        MarkError ctrlDetails
+        hasError = True
+    End If
+    If Trim(ctrlOriginalTicket.value) = "" Then
+        MarkError ctrlOriginalTicket
+        hasError = True
+    End If
+
+    If hasError Then
+        document.getElementById("err2").innerText = "Please fill in all required fields (highlighted in red)."
+        document.getElementById("err2").style.display = "block"
+        Exit Sub
+    End If
+
+    Dim subj, body, errLine
+    subj = "Support Request - Ticket #" & ctrlTicket2.value
+
+    errLine = ""
+    If Trim(ctrlErrorMsg.value) <> "" Then
+        errLine = "Error Message: " & ctrlErrorMsg.value & "<br>"
+    End If
+
+    body = "<p><b>To Support Team:</b></p>" & _
+           "<p>Ticket Number: " & ctrlTicket2.value & "<br>" & _
+           "General Problem: " & ctrlProblem.value & "<br>" & _
+           "User ID: " & ctrlUserID.value & "<br>" & _
+           errLine & _
+           "Important Details for the Support Team: " & ctrlDetails.value & "<br>" & _
+           "Original Ticket: " & ctrlOriginalTicket.value & "</p>"
+
+    If SendViaOutlook(Tab2ToEmails, Tab2CcEmails, subj, body, "", GetTab2AttachmentArray()) Then
+        document.getElementById("status2").innerText = "Email draft opened."
+        ctrlTicket2.value = ""
+        ctrlProblem.value = ""
+        ctrlUserID.value = ""
+        ctrlErrorMsg.value = ""
+        ctrlDetails.value = ""
+        ctrlOriginalTicket.value = ""
+        ClearTab2Attachments
+    End If
+End Sub
+
+' ============================================================
+' CATEGORY 2 TABS (1-5): shared form structure
+' ============================================================
+Sub ResetErrorsSev(idx)
+    ClearError document.getElementById("svTicket" & idx)
+    ClearError document.getElementById("svError" & idx)
+    ClearError document.getElementById("svListTickets" & idx)
+    ClearError document.getElementById("svLocation" & idx)
+    document.getElementById("svErr" & idx).style.display = "none"
+End Sub
+
+Sub GenerateSeverityEmail(idx)
+    On Error Resume Next
+    Dim hasError
+    hasError = False
+    ResetErrorsSev idx
+
+    Dim ctrlTicket, ctrlError, ctrlListTickets, ctrlLogText, ctrlLogFile, ctrlLocation
+    Set ctrlTicket = document.getElementById("svTicket" & idx)
+    Set ctrlError = document.getElementById("svError" & idx)
+    Set ctrlListTickets = document.getElementById("svListTickets" & idx)
+    Set ctrlLogText = document.getElementById("svLogText" & idx)
+    Set ctrlLogFile = document.getElementById("svLogFile" & idx)
+    Set ctrlLocation = document.getElementById("svLocation" & idx)
+
+    If Trim(ctrlTicket.value) = "" Then
+        MarkError ctrlTicket
+        hasError = True
+    End If
+    If Trim(ctrlError.value) = "" Then
+        MarkError ctrlError
+        hasError = True
+    End If
+    If Trim(ctrlListTickets.value) = "" Then
+        MarkError ctrlListTickets
+        hasError = True
+    End If
+    If Trim(ctrlLocation.value) = "" Then
+        MarkError ctrlLocation
+        hasError = True
+    End If
+    ' Log Files section is "as needed" -- optional, not validated
+
+    If hasError Then
+        document.getElementById("svErr" & idx).innerText = "Please fill in all required fields (highlighted in red)."
+        document.getElementById("svErr" & idx).style.display = "block"
+        Exit Sub
+    End If
+
+    Dim subj, body, logSection, introHtml
+    subj = SevTabName(idx) & " - Ticket #" & ctrlTicket.value
+
+    logSection = ""
+    If Trim(ctrlLogText.value) <> "" Then
+        logSection = "<p><b>Log Details:</b><br>" & Replace(ctrlLogText.value, vbCrLf, "<br>") & "</p>"
+    End If
+
+    If SevTabIntro(idx) <> "" Then
+        introHtml = SevTabIntro(idx)
+    Else
+        introHtml = "<p><b>" & SevTabName(idx) & "</b></p>"
+    End If
+
+    body = introHtml & _
+           "<p>Ticket Number: " & ctrlTicket.value & "<br>" & _
+           "Error Message: " & Replace(ctrlError.value, vbCrLf, "<br>") & "<br>" & _
+           "List of Ticket(s): " & ctrlListTickets.value & "<br>" & _
+           "User Location: " & ctrlLocation.value & "</p>" & _
+           logSection
+
+    If SendViaOutlook(SevTabEmail(idx), "", subj, body, ctrlLogFile.value, Array()) Then
+        document.getElementById("svStatus" & idx).innerText = "Email draft opened."
+        ctrlTicket.value = ""
+        ctrlError.value = ""
+        ctrlListTickets.value = ""
+        ctrlLogText.value = ""
+        ctrlLocation.value = ""
+        ctrlLogFile.value = ""
+        document.getElementById("svListCount" & idx).innerText = "0 tickets"
+    End If
+End Sub
+
+Sub GenerateSeverityEmail1 : GenerateSeverityEmail 1 : End Sub
+Sub GenerateSeverityEmail2 : GenerateSeverityEmail 2 : End Sub
+Sub GenerateSeverityEmail3 : GenerateSeverityEmail 3 : End Sub
+Sub GenerateSeverityEmail4 : GenerateSeverityEmail 4 : End Sub
+Sub GenerateSeverityEmail5 : GenerateSeverityEmail 5 : End Sub
+
+' Live count of comma-separated ticket numbers typed into "List of Ticket"
+Sub UpdateTicketCount(idx)
+    On Error Resume Next
+    Dim ctrl, parts, i, cnt
+    Set ctrl = document.getElementById("svListTickets" & idx)
+    parts = Split(ctrl.value, ",")
+    cnt = 0
+    For i = 0 To UBound(parts)
+        If Trim(parts(i)) <> "" Then cnt = cnt + 1
+    Next
+    If cnt = 1 Then
+        document.getElementById("svListCount" & idx).innerText = "1 ticket"
+    Else
+        document.getElementById("svListCount" & idx).innerText = cnt & " tickets"
+    End If
+End Sub
+
+Sub UpdateTicketCount1 : UpdateTicketCount 1 : End Sub
+Sub UpdateTicketCount2 : UpdateTicketCount 2 : End Sub
+Sub UpdateTicketCount3 : UpdateTicketCount 3 : End Sub
+Sub UpdateTicketCount4 : UpdateTicketCount 4 : End Sub
+Sub UpdateTicketCount5 : UpdateTicketCount 5 : End Sub
+
+' ============================================================
+' How To / Developer Notes -- shown as regular in-page panels
+' (NOT a fixed-position overlay: position:fixed does not render
+' reliably in the old IE engine mshta uses).
+' ============================================================
+Sub ShowHowTo
+    On Error Resume Next
+    HideAllPanels
+    document.getElementById("howToPanel").style.display = "block"
+End Sub
+
+Sub CloseHowTo
+    On Error Resume Next
+    HideAllPanels
+    document.getElementById(gLastPanelID).style.display = "block"
+End Sub
+
+Sub ShowDevNotes
+    On Error Resume Next
+    Dim pwd
+    pwd = InputBox("Enter the developer password:", "Developer Notes")
+    If pwd = DevNotesPassword Then
+        HideAllPanels
+        document.getElementById("devNotesPanel").style.display = "block"
+    ElseIf pwd <> "" Then
+        MsgBox "Incorrect password."
+    End If
+End Sub
+
+Sub CloseDevNotes
+    On Error Resume Next
+    HideAllPanels
+    document.getElementById(gLastPanelID).style.display = "block"
+End Sub
+
+Sub Window_OnLoad
+    InitLog
+    ShowCategoryGeneral
+End Sub
+
+</script>
+</head>
+<body>
+
+<div id="appHeader">
+    <h1>Enter Your Title Here</h1>
+</div>
+
+<div id="categoryNav">
+    <div class="cat-btn-group">
+        <button id="catBtnGeneral" class="cat-btn active" onclick="ShowCategoryGeneral">Category 1</button>
+        <button id="catBtnSeverity" class="cat-btn" onclick="ShowCategorySeverity">Category 2</button>
+        <button class="icon-btn" onclick="ShowHowTo" title="How to use this tool">?</button>
+        <button class="dev-btn" onclick="ShowDevNotes">Developer Notes</button>
+    </div>
+</div>
+
+<div id="subNavGeneral">
+    <button id="tabBtn1" class="tab-btn tab-btn-red" onclick="ShowTab1">Enter Your Tab 1 Here</button>
+    <button id="tabBtn2" class="tab-btn tab-btn-blue" onclick="ShowTab2">Enter Your Tab 2 Here</button>
+</div>
+
+<div id="subNavSeverity" style="display:none">
+    <button id="tabBtnSv1" class="tab-btn tab-btn-purple" onclick="ShowSevTab1">Enter Your Tab 1 Here</button>
+    <button id="tabBtnSv2" class="tab-btn tab-btn-purple" onclick="ShowSevTab2">Enter Your Tab 2 Here</button>
+    <button id="tabBtnSv3" class="tab-btn tab-btn-purple" onclick="ShowSevTab3">Enter Your Tab 3 Here</button>
+    <button id="tabBtnSv4" class="tab-btn tab-btn-purple" onclick="ShowSevTab4">Enter Your Tab 4 Here</button>
+    <button id="tabBtnSv5" class="tab-btn tab-btn-purple" onclick="ShowSevTab5">Enter Your Tab 5 Here</button>
+</div>
+
+<!-- ================= TAB 1 (Category 1) ================= -->
+<div id="tab1">
+    <div class="panel">
+        <div class="panel-header red">
+            <h2>Enter Your Title Here</h2>
+            <p>Enter your description here.</p>
+        </div>
+        <div class="panel-body">
+            <div id="err1" class="error-box"></div>
+
+            <div class="field">
+                <label>Enter ID:</label>
+                <input type="text" id="ctrlID">
+            </div>
+            <div class="field">
+                <label>Ticket Number:</label>
+                <input type="text" id="ctrlTicket1">
+            </div>
+            <div class="field">
+                <label>Choose Agent:</label>
+                <!--
+                    *** PLACEHOLDER ADDRESSES -- REPLACE BEFORE REAL USE ***
+                    Every value="...@example.com" below is a fake address and
+                    will NOT deliver mail. Swap each one for the agent's real
+                    work email before relying on this tool.
+
+                    Agent list: each line below is one agent.
+                        value="..."      -> the agent's email address (where the email actually goes --
+                                            it's also added to the "To" line, alongside the requester,
+                                            when this agent is selected; see ValidateAndSend1)
+                        data-name="..."  -> the agent's display name (shown in the email text)
+                        Agent N          -> the label shown in this dropdown
+                    To add/remove/rename an agent, add/remove/edit a line the same way.
+                -->
+                <select id="ctrlAgent">
+                    <option value="">-- Select Agent --</option>
+                    <option value="agent1@example.com" data-name="Agent 1">Agent 1</option>
+                    <option value="agent2@example.com" data-name="Agent 2">Agent 2</option>
+                    <option value="agent3@example.com" data-name="Agent 3">Agent 3</option>
+                    <option value="agent4@example.com" data-name="Agent 4">Agent 4</option>
+                    <option value="agent5@example.com" data-name="Agent 5">Agent 5</option>
+                    <option value="agent6@example.com" data-name="Agent 6">Agent 6</option>
+                    <option value="agent7@example.com" data-name="Agent 7">Agent 7</option>
+                    <option value="agent8@example.com" data-name="Agent 8">Agent 8</option>
+                    <option value="agent9@example.com" data-name="Agent 9">Agent 9</option>
+                </select>
+            </div>
+
+            <button class="btn btn-red" onclick="ValidateAndSend1">Generate Email</button>
+            <div id="status1" class="status-msg"></div>
+
+            <div class="section-title">Agent Log</div>
+            <table class="log-table">
+                <thead>
+                    <tr><th>Log ID</th><th>Ticket Number</th><th>Agent Name</th><th>Agent Email</th></tr>
+                </thead>
+                <tbody id="logBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ================= TAB 2 (Category 1) ================= -->
+<div id="tab2">
+    <div class="panel">
+        <div class="panel-header blue">
+            <h2>Enter Your Title Here</h2>
+            <p>Enter your description here.</p>
+        </div>
+        <div class="panel-body">
+            <div id="err2" class="error-box blue-theme"></div>
+
+            <div class="field">
+                <label>Ticket Number:</label>
+                <input type="text" id="ctrlTicket2">
+            </div>
+            <div class="field">
+                <label>General Problem:</label>
+                <textarea id="ctrlProblem" rows="5"></textarea>
+            </div>
+            <div class="field">
+                <label>User ID:</label>
+                <input type="text" id="ctrlUserID">
+            </div>
+            <div class="field">
+                <label>Error Message (if applicable):</label>
+                <textarea id="ctrlErrorMsg" rows="5"></textarea>
+            </div>
+            <div class="field">
+                <label>Important Details for the Support Team:</label>
+                <textarea id="ctrlDetails" rows="5"></textarea>
+            </div>
+            <div class="field">
+                <label>Original Ticket:</label>
+                <textarea id="ctrlOriginalTicket" rows="5"></textarea>
+            </div>
+            <div class="field">
+                <label>Add Attachments (optional):</label>
+                <div class="log-note">Choose a file, then click "Add Attachment". Repeat to attach more than one.</div>
+                <input type="file" id="ctrlTab2File">
+                <div style="margin-top:6px;">
+                    <button type="button" class="btn btn-blue" style="padding:6px 14px;font-size:12px;" onclick="AddTab2Attachment">Add Attachment</button>
+                    <button type="button" class="btn" style="background:#888;padding:6px 14px;font-size:12px;" onclick="ClearTab2Attachments">Clear All</button>
+                </div>
+                <div id="tab2AttachList" class="log-note" style="margin-top:6px;">No attachments added.</div>
+            </div>
+
+            <button class="btn btn-blue" onclick="ValidateAndSend2">Send Email</button>
+            <div id="status2" class="status-msg"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ================= CATEGORY 2 TABS (1-5) ================= -->
+<!-- Titles/descriptions below should be kept in sync with SevTabName()/SevTabDesc() in the script -->
+
+<div id="sevTab1" style="display:none">
+    <div class="panel">
+        <div class="panel-header purple">
+            <h2>Enter Your Title Here</h2>
+            <p>Enter your description here.</p>
+        </div>
+        <div class="panel-body">
+            <div id="svErr1" class="error-box purple-theme"></div>
+            <div class="field">
+                <label>Ticket Number:</label>
+                <input type="text" id="svTicket1">
+            </div>
+            <div class="field">
+                <label>Error Message:</label>
+                <textarea id="svError1" rows="6"></textarea>
+            </div>
+            <div class="field">
+                <label>List of Ticket(s) (comma-separated, e.g. INC121323, INC121324):</label>
+                <input type="text" id="svListTickets1" onkeyup="UpdateTicketCount1" onchange="UpdateTicketCount1">
+                <div id="svListCount1" class="ticket-count">0 tickets</div>
+            </div>
+            <div class="field">
+                <label>Log Files (as needed):</label>
+                <div class="log-note">Attach a log file if you have one:</div>
+                <input type="file" id="svLogFile1">
+                <div class="log-note">...or paste log text below:</div>
+                <textarea id="svLogText1" rows="4"></textarea>
+            </div>
+            <div class="field">
+                <label>User Location:</label>
+                <input type="text" id="svLocation1">
+            </div>
+            <button class="btn btn-purple" onclick="GenerateSeverityEmail1">Generate Email</button>
+            <div id="svStatus1" class="status-msg"></div>
+        </div>
+    </div>
+</div>
+
+<div id="sevTab2" style="display:none">
+    <div class="panel">
+        <div class="panel-header purple">
+            <h2>Enter Your Title Here</h2>
+            <p>Enter your description here.</p>
+        </div>
+        <div class="panel-body">
+            <div id="svErr2" class="error-box purple-theme"></div>
+            <div class="field">
+                <label>Ticket Number:</label>
+                <input type="text" id="svTicket2">
+            </div>
+            <div class="field">
+                <label>Error Message:</label>
+                <textarea id="svError2" rows="6"></textarea>
+            </div>
+            <div class="field">
+                <label>List of Ticket(s) (comma-separated, e.g. INC121323, INC121324):</label>
+                <input type="text" id="svListTickets2" onkeyup="UpdateTicketCount2" onchange="UpdateTicketCount2">
+                <div id="svListCount2" class="ticket-count">0 tickets</div>
+            </div>
+            <div class="field">
+                <label>Log Files (as needed):</label>
+                <div class="log-note">Attach a log file if you have one:</div>
+                <input type="file" id="svLogFile2">
+                <div class="log-note">...or paste log text below:</div>
+                <textarea id="svLogText2" rows="4"></textarea>
+            </div>
+            <div class="field">
+                <label>User Location:</label>
+                <input type="text" id="svLocation2">
+            </div>
+            <button class="btn btn-purple" onclick="GenerateSeverityEmail2">Generate Email</button>
+            <div id="svStatus2" class="status-msg"></div>
+        </div>
+    </div>
+</div>
+
+<div id="sevTab3" style="display:none">
+    <div class="panel">
+        <div class="panel-header purple">
+            <h2>Enter Your Title Here</h2>
+            <p>Enter your description here.</p>
+        </div>
+        <div class="panel-body">
+            <div id="svErr3" class="error-box purple-theme"></div>
+            <div class="field">
+                <label>Ticket Number:</label>
+                <input type="text" id="svTicket3">
+            </div>
+            <div class="field">
+                <label>Error Message:</label>
+                <textarea id="svError3" rows="6"></textarea>
+            </div>
+            <div class="field">
+                <label>List of Ticket(s) (comma-separated, e.g. INC121323, INC121324):</label>
+                <input type="text" id="svListTickets3" onkeyup="UpdateTicketCount3" onchange="UpdateTicketCount3">
+                <div id="svListCount3" class="ticket-count">0 tickets</div>
+            </div>
+            <div class="field">
+                <label>Log Files (as needed):</label>
+                <div class="log-note">Attach a log file if you have one:</div>
+                <input type="file" id="svLogFile3">
+                <div class="log-note">...or paste log text below:</div>
+                <textarea id="svLogText3" rows="4"></textarea>
+            </div>
+            <div class="field">
+                <label>User Location:</label>
+                <input type="text" id="svLocation3">
+            </div>
+            <button class="btn btn-purple" onclick="GenerateSeverityEmail3">Generate Email</button>
+            <div id="svStatus3" class="status-msg"></div>
+        </div>
+    </div>
+</div>
+
+<div id="sevTab4" style="display:none">
+    <div class="panel">
+        <div class="panel-header purple">
+            <h2>Enter Your Title Here</h2>
+            <p>Enter your description here.</p>
+        </div>
+        <div class="panel-body">
+            <div id="svErr4" class="error-box purple-theme"></div>
+            <div class="field">
+                <label>Ticket Number:</label>
+                <input type="text" id="svTicket4">
+            </div>
+            <div class="field">
+                <label>Error Message:</label>
+                <textarea id="svError4" rows="6"></textarea>
+            </div>
+            <div class="field">
+                <label>List of Ticket(s) (comma-separated, e.g. INC121323, INC121324):</label>
+                <input type="text" id="svListTickets4" onkeyup="UpdateTicketCount4" onchange="UpdateTicketCount4">
+                <div id="svListCount4" class="ticket-count">0 tickets</div>
+            </div>
+            <div class="field">
+                <label>Log Files (as needed):</label>
+                <div class="log-note">Attach a log file if you have one:</div>
+                <input type="file" id="svLogFile4">
+                <div class="log-note">...or paste log text below:</div>
+                <textarea id="svLogText4" rows="4"></textarea>
+            </div>
+            <div class="field">
+                <label>User Location:</label>
+                <input type="text" id="svLocation4">
+            </div>
+            <button class="btn btn-purple" onclick="GenerateSeverityEmail4">Generate Email</button>
+            <div id="svStatus4" class="status-msg"></div>
+        </div>
+    </div>
+</div>
+
+<div id="sevTab5" style="display:none">
+    <div class="panel">
+        <div class="panel-header purple">
+            <h2>Enter Your Title Here</h2>
+            <p>Enter your description here.</p>
+        </div>
+        <div class="panel-body">
+            <div id="svErr5" class="error-box purple-theme"></div>
+            <div class="field">
+                <label>Ticket Number:</label>
+                <input type="text" id="svTicket5">
+            </div>
+            <div class="field">
+                <label>Error Message:</label>
+                <textarea id="svError5" rows="6"></textarea>
+            </div>
+            <div class="field">
+                <label>List of Ticket(s) (comma-separated, e.g. INC121323, INC121324):</label>
+                <input type="text" id="svListTickets5" onkeyup="UpdateTicketCount5" onchange="UpdateTicketCount5">
+                <div id="svListCount5" class="ticket-count">0 tickets</div>
+            </div>
+            <div class="field">
+                <label>Log Files (as needed):</label>
+                <div class="log-note">Attach a log file if you have one:</div>
+                <input type="file" id="svLogFile5">
+                <div class="log-note">...or paste log text below:</div>
+                <textarea id="svLogText5" rows="4"></textarea>
+            </div>
+            <div class="field">
+                <label>User Location:</label>
+                <input type="text" id="svLocation5">
+            </div>
+            <button class="btn btn-purple" onclick="GenerateSeverityEmail5">Generate Email</button>
+            <div id="svStatus5" class="status-msg"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ================= How To modal ================= -->
+<div id="howToPanel" style="display:none">
+    <div class="panel">
+        <div class="panel-header grey">
+            <h2>How to Use This Tool</h2>
+            <p>This tool helps you send common support emails quickly.</p>
+        </div>
+        <div class="panel-body info-box">
+            <h3>1. Enter Your Tab 1 Here</h3>
+            <ol>
+                <li>Click <b>Category 1</b> at the top, then <b>Enter Your Tab 1 Here</b>.</li>
+                <li>Type the person's ID in <b>Enter ID</b>.</li>
+                <li>Type the ticket number in <b>Ticket Number</b>.</li>
+                <li>Pick the agent from the <b>Choose Agent</b> list.</li>
+                <li>Click <b>Generate Email</b>. Outlook will open a draft addressed to both the person in <b>Enter ID</b> and the selected agent, with your signature already in it. Check it, then send it.</li>
+                <li>The email is added automatically to the <b>Agent Log</b> table below the form.</li>
+            </ol>
+
+            <h3>2. Enter Your Tab 2 Here</h3>
+            <ol>
+                <li>Click <b>Category 1</b> at the top, then <b>Enter Your Tab 2 Here</b>.</li>
+                <li>Fill in the ticket details.</li>
+                <li>To attach a file, choose it and click <b>Add Attachment</b>. Repeat for each additional file; attached files are listed below the buttons. Click <b>Clear All</b> to remove them.</li>
+                <li>Click <b>Send Email</b>. Outlook will open a draft addressed to the support team with any attachments included.</li>
+            </ol>
+
+            <h3>3. Category 2</h3>
+            <ol>
+                <li>Click <b>Category 2</b> at the top.</li>
+                <li>Pick the tab that matches the issue: Enter Your Tab 1 Here, Enter Your Tab 2 Here, Enter Your Tab 3 Here, Enter Your Tab 4 Here, or Enter Your Tab 5 Here.</li>
+                <li>Fill in the ticket number, error message, list of tickets, and user location.</li>
+                <li>If you have a log file, attach it. If not, you can paste the log text in the box instead.</li>
+                <li>Click <b>Generate Email</b>. Outlook will open a draft ready to review and send.</li>
+            </ol>
+
+            <p><b>Tip:</b> If a field turns red, it's missing. Fill it in and click the button again.</p>
+
+            <button class="close-btn" onclick="CloseHowTo">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- ================= Developer Notes panel ================= -->
+<div id="devNotesPanel" style="display:none">
+    <div class="panel">
+        <div class="panel-header grey">
+            <h2>Developer Notes</h2>
+            <p>Technical notes for whoever maintains this tool.</p>
+        </div>
+        <div class="panel-body info-box">
+            <h3>File / Runtime</h3>
+            <ul>
+                <li>This is a single .hta file (HTML Application), run via <code>mshta.exe</code>. It is NOT a normal web page and will not run in Chrome/Edge.</li>
+                <li>All logic is VBScript inside the one &lt;script language="VBScript"&gt; block.</li>
+            </ul>
+
+            <h3>Outlook / Signature</h3>
+            <ul>
+                <li>Emails are created via the Outlook COM object (<code>CreateObject("Outlook.Application")</code>), not mailto: links, because mailto: does not include the default signature.</li>
+                <li><b>Signature comes from disk, not from Outlook's Object Model.</b> The "obvious" approach -- call <code>objMail.Display</code>, wait for the compose window to load, then read the now-signature-filled <code>objMail.HTMLBody</code> and prepend to it -- does NOT work under some organizations' policy: HTMLBody never picks up the signature no matter how long the script waits, so the draft goes out blank. <code>LoadSignature()</code> works around this entirely outside the Object Model: it reads the registry (<code>HKCU\Software\Microsoft\Office\&lt;ver&gt;\Common\MailSettings\NewSignature</code>) to find the default signature's name, then reads that signature's <code>.htm</code> file straight from <code>%APPDATA%\Microsoft\Signatures\</code>. <code>SendViaOutlook</code> builds the full body (<code>strBodyHtml & LoadSignature()</code>) and sets it BEFORE calling <code>Display()</code> -- there's no read-after-display race to manage, and no signature means <code>LoadSignature()</code> just returns "" and the email still sends fine, minus the signature.</li>
+                <li><b>Blank body, second possible cause:</b> if the Outlook profile's default compose format is Plain Text or Rich Text (a common corporate/DLP policy setting), setting <code>.HTMLBody</code> has no visible effect -- Outlook keeps rendering the plain-text <code>Body</code>, and the draft looks completely empty even though the property "set" without error. <code>SendViaOutlook</code> explicitly sets <code>objMail.BodyFormat = 2</code> (olFormatHTML) right after <code>CreateItem</code> so HTML is guaranteed to be what actually renders, regardless of the mailbox's default format.</li>
+                <li><b>Do NOT call <code>objMail.Recipients.ResolveAll</code> (breaks the whole app):</b> it can trigger Outlook's "Object Model Guard" security prompt (a program is trying to access address information...). If that dialog opens off-screen or behind another window, the synchronous COM call blocks forever, which freezes the entire single-threaded HTA -- not just email sending, EVERYTHING, including switching tabs, since nothing else can run while the call is stuck waiting on a hidden dialog. To/CC still resolve fine on their own (same as always) once the user clicks into the field or hits Send -- there's no safe way to force that resolution early, so don't try.</li>
+                <li>Emails open as drafts (<code>.Display</code>), not sent automatically, so a human reviews before sending. Swap to <code>.Send</code> only if that's intentional.</li>
+                <li>Attachments use <code>objMail.Attachments.Add</code> with the path from a file &lt;input&gt;. HTA runs in the Local Machine security zone, so file inputs expose the real full path, unlike a normal browser's fake path.</li>
+                <li>Since <code>Attachments.Add</code> only takes one path at a time, <code>SendViaOutlook</code> takes both a single <code>strAttachmentPath</code> (used by Category 2) and an <code>arrExtraAttachments</code> array (used by Tab 2's "Add Attachments" queue, see <code>gTab2Attachments</code> / <code>AddTab2Attachment</code> / <code>GetTab2AttachmentArray</code>). Callers that don't need it pass <code>Array()</code>.</li>
+            </ul>
+
+            <h3>Rendering quirks (mshta / old IE engine)</h3>
+            <ul>
+                <li>No DOCTYPE is used, on purpose. Adding one to force a modern IE document mode broke VBScript's inline onclick handler binding when tested. Keep this file without a DOCTYPE.</li>
+                <li>Because of that, compound CSS class selectors (e.g. .tab-btn-red.active) are unreliable. Active/inactive tab colors are set directly via inline style in VBScript instead (see <code>SetTabButtonState</code> / <code>SetCategoryButtonState</code>), not by toggling CSS classes.</li>
+                <li>&lt;select&gt; elements ignore width:100% and size to their widest &lt;option&gt; text in this engine -- keep option label text short.</li>
+                <li>Dynamically building table rows with <code>document.createElement("tr")</code> + innerHTML does not work reliably here. Use <code>tbody.insertRow(-1)</code> / <code>row.insertCell(-1)</code> instead (see <code>AddLogRow</code>).</li>
+                <li>A fixed-position overlay (<code>position:fixed</code>) does not render reliably either -- that's why this panel and How To are shown/hidden in-place via <code>HideAllPanels</code> / <code>ShowPanel</code>, the same mechanism as every other tab, instead of a floating modal.</li>
+                <li>VBScript's "On Error Resume Next" only suppresses errors in the procedure it's declared in -- it does not propagate into Subs/Functions it calls. Any Sub that touches the DOM should have its own On Error Resume Next, or one unhandled error partway through can leave the UI in a broken state (e.g. two panels visible at once).</li>
+            </ul>
+
+            <h3>Config you'll likely need to edit</h3>
+            <ul>
+                <li>Agent list (9 agents) -- Tab 1 form, the &lt;select id="ctrlAgent"&gt; markup.</li>
+                <li><code>Tab2ToEmails</code> / <code>Tab2CcEmails</code> -- top of the script.</li>
+                <li><code>SevTabName()</code> / <code>SevTabDesc()</code> / <code>SevTabEmail()</code> / <code>SevTabIntro()</code> -- top of the script, one entry per Category 2 tab (1-5).</li>
+                <li><code>DevNotesPassword</code> -- top of the script (see Security note below).</li>
+                <li>Every visible title, tab label, and description in this file is a placeholder ("Enter Your Title Here" / "Enter Your Tab N Here" / "Enter your description here.") -- replace them with real content before handing this out.</li>
+            </ul>
+
+            <h3>Log</h3>
+            <ul>
+                <li>Tab 1's Agent Log is persisted to <code>EmailLog.csv</code> next to this .hta (LogID, TicketNumber, AgentName, AgentEmail, Timestamp) and reloaded into the table on startup via <code>InitLog</code>.</li>
+            </ul>
+
+            <h3>Security note</h3>
+            <ul>
+                <li>The Developer Notes password is a basic deterrent only, not real security. This file is plain text, so anyone can open it in Notepad and read the password, or just delete the check. Don't put anything truly sensitive in this file.</li>
+            </ul>
+
+            <button class="close-btn" onclick="CloseDevNotes">Close</button>
+        </div>
+    </div>
+</div>
+
+<div id="appFooter">Proprietary &mdash; Developed by Enter Your Name/Team Here</div>
+
+</body>
+</html>
