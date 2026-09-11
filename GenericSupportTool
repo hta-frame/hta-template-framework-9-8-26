@@ -282,8 +282,15 @@ SevTabName(5) = "Enter Your Tab 5 Here" : SevTabDesc(5) = "Enter your descriptio
 
 ' Optional custom intro paragraph per tab (used instead of the generic "<b>Tab Name</b>" heading).
 ' Leave an entry blank ("") to fall back to the generic heading.
+' Each tab below uses the same greeting + tab name FORMAT, just with a
+' different greeting word per tab. SevTabName(#) must already be set
+' (above) before these lines run, since each one reads that tab's name.
 Dim SevTabIntro(5)
-' (none set by default -- all 5 tabs fall back to the generic "<b>Tab Name</b>" heading)
+SevTabIntro(1) = "<p>Hello,</p><p><b>" & SevTabName(1) & "</b></p>"
+SevTabIntro(2) = "<p>Hi,</p><p><b>" & SevTabName(2) & "</b></p>"
+SevTabIntro(3) = "<p>Greetings,</p><p><b>" & SevTabName(3) & "</b></p>"
+SevTabIntro(4) = "<p>Good day,</p><p><b>" & SevTabName(4) & "</b></p>"
+SevTabIntro(5) = "<p>Hi there,</p><p><b>" & SevTabName(5) & "</b></p>"
 
 ' Basic deterrent only -- this file is plain text, so anyone can open it in
 ' Notepad and read this password (or just delete the check). Not real security.
@@ -293,6 +300,109 @@ DevNotesPassword = "changeme123"
 Dim gLogFilePath, gNextLogID, gFso, gLastPanelID
 Set gFso = CreateObject("Scripting.FileSystemObject")
 gLastPanelID = "tab1"
+
+' Only the most recent N rows get re-inserted into the on-screen log table
+' at startup. The full history still lives in EmailLog.csv (open it in
+' Excel to see everything) -- this cap just stops startup from getting
+' slower and slower forever as the file grows, since re-inserting
+' thousands of historical DOM rows on every launch is what was doing that.
+Const MAX_LOG_ROWS_SHOWN = 200
+
+' ============================================================
+' START: CsvEscapeField / ParseCsvLine -- proper CSV quoting.
+' ============================================================
+' EmailLog.csv fields (ticket number, agent name) are free text a user
+' typed in, and could contain a comma (e.g. a pasted ticket number like
+' "1,234") or a quote. Writing them with a plain "&" join and reading them
+' back with plain Split(line, ",") -- the original approach -- silently
+' shifts every column after the first comma, corrupting that row (and
+' every row's LogID/ticket/agent columns look wrong afterward). These two
+' functions implement minimal RFC-4180-style CSV quoting so that no longer
+' happens.
+Function CsvEscapeField(s)
+    s = CStr(s)
+    If InStr(s, ",") > 0 Or InStr(s, """") > 0 Or InStr(s, vbCr) > 0 Or InStr(s, vbLf) > 0 Then
+        s = Replace(s, """", """""")
+        CsvEscapeField = """" & s & """"
+    Else
+        CsvEscapeField = s
+    End If
+End Function
+
+Function ParseCsvLine(line)
+    Dim result(), count, i, ch, cur, inQuotes
+    count = 0
+    ReDim result(10)
+    cur = ""
+    inQuotes = False
+    i = 1
+    Do While i <= Len(line)
+        ch = Mid(line, i, 1)
+        If inQuotes Then
+            If ch = """" Then
+                If i < Len(line) And Mid(line, i + 1, 1) = """" Then
+                    cur = cur & """"
+                    i = i + 1
+                Else
+                    inQuotes = False
+                End If
+            Else
+                cur = cur & ch
+            End If
+        Else
+            If ch = """" Then
+                inQuotes = True
+            ElseIf ch = "," Then
+                result(count) = cur
+                count = count + 1
+                If count > UBound(result) Then ReDim Preserve result(UBound(result) + 10)
+                cur = ""
+            Else
+                cur = cur & ch
+            End If
+        End If
+        i = i + 1
+    Loop
+    result(count) = cur
+    ReDim Preserve result(count)
+    ParseCsvLine = result
+End Function
+' ============================================================
+' END: CsvEscapeField / ParseCsvLine
+' ============================================================
+
+' ============================================================
+' START: EscapeHtml / NlToBr -- make free-typed/pasted text safe to drop
+' into an HTML email body.
+' ============================================================
+' Without this, a pasted error message or log snippet containing "<", ">"
+' or "&" (stack traces, generics like List<String>, XML/HTML snippets --
+' all common in support tickets) gets interpreted as real markup by
+' Outlook's renderer and can silently vanish or mangle part of the email.
+Function EscapeHtml(s)
+    s = CStr(s)
+    s = Replace(s, "&", "&amp;")
+    s = Replace(s, "<", "&lt;")
+    s = Replace(s, ">", "&gt;")
+    EscapeHtml = s
+End Function
+
+' Converts line breaks to <br> tags. Handles CRLF (\r\n, what a Windows
+' textarea normally produces when the user presses Enter), and also lone
+' LF or lone CR (common in text pasted from web forms/non-Windows
+' sources) -- the original code only handled CRLF, so pasted multi-line
+' text using bare \n silently lost its line breaks and ran together as
+' one paragraph in the generated email.
+Function NlToBr(s)
+    s = CStr(s)
+    s = Replace(s, vbCrLf, vbLf)
+    s = Replace(s, vbCr, vbLf)
+    s = Replace(s, vbLf, "<br>")
+    NlToBr = s
+End Function
+' ============================================================
+' END: EscapeHtml / NlToBr
+' ============================================================
 
 ' ============================================================
 ' START: LoadSignature -- reads the user's default "New Message"
@@ -425,9 +535,18 @@ Function SendViaOutlook(strTo, strCc, strSubject, strBodyHtml, strAttachmentPath
     ' still resolve normally (on their own) once the user clicks into the
     ' field or hits Send -- there's no safe way to force that early.
 
+    ' Track any attachment path that no longer points to a real file (moved,
+    ' renamed, or deleted since the user picked it) instead of just skipping
+    ' it -- silently sending the email without it means the user has no way
+    ' to know it's missing until whoever receives it asks where it is.
+    Dim missingAttachments
+    missingAttachments = ""
+
     If Trim(strAttachmentPath) <> "" Then
         If gFso.FileExists(strAttachmentPath) Then
             objMail.Attachments.Add strAttachmentPath
+        Else
+            missingAttachments = missingAttachments & gFso.GetFileName(strAttachmentPath) & vbCrLf
         End If
     End If
 
@@ -439,9 +558,17 @@ Function SendViaOutlook(strTo, strCc, strSubject, strBodyHtml, strAttachmentPath
         If Trim(arrExtraAttachments(i)) <> "" Then
             If gFso.FileExists(arrExtraAttachments(i)) Then
                 objMail.Attachments.Add arrExtraAttachments(i)
+            Else
+                missingAttachments = missingAttachments & gFso.GetFileName(arrExtraAttachments(i)) & vbCrLf
             End If
         End If
     Next
+
+    If missingAttachments <> "" Then
+        MsgBox "The following attachment(s) could not be found and were NOT added to this email " & _
+               "(they may have been moved, renamed, or deleted since you selected them):" & vbCrLf & vbCrLf & _
+               missingAttachments, vbExclamation, "Missing Attachment(s)"
+    End If
 
     ' Everything (body, signature, recipients, attachments) is already
     ' filled in, so Display() now just shows the finished draft -- no more
@@ -455,6 +582,110 @@ Function SendViaOutlook(strTo, strCc, strSubject, strBodyHtml, strAttachmentPath
 End Function
 ' ============================================================
 ' END: SendViaOutlook
+' ============================================================
+
+' ============================================================
+' START: BeginSend / FinishSend -- deferred send with a "please wait"
+' indicator.
+' ============================================================
+' CreateObject("Outlook.Application") launches Outlook if it isn't already
+' running, which can take several seconds -- and since HTA/VBScript is
+' single-threaded, the ENTIRE UI is unresponsive for that whole time with
+' no visual sign anything is happening, which reads as a crash/freeze to
+' a normal user. There is no real threading available here, so this can't
+' be made non-blocking, but we can at least show a wait cursor + status
+' message before the blocking call starts. That only works if the message
+' actually gets painted first: setting DOM/style properties does not
+' repaint until the current script yields back to the browser's message
+' loop, so BeginSend sets the "please wait" state, then uses
+' window.setTimeout to defer the actual send (FinishSend) to the next
+' tick -- giving the engine a chance to paint before the blocking call
+' begins.
+Dim gPendingKind, gPendingSevIdx, gPendingStatusID
+Dim gPendingTo, gPendingCc, gPendingSubj, gPendingBody, gPendingAttach, gPendingExtraAttach
+Dim gTab1PendingTicket, gTab1PendingAgentName, gTab1PendingAgentEmail
+Dim gSendInProgress
+gSendInProgress = False
+
+Sub BeginSend(kind, statusID, strTo, strCc, strSubject, strBodyHtml, strAttachmentPath, arrExtraAttachments)
+    On Error Resume Next
+
+    ' The 30ms deferral below is enough time for a user to click a second
+    ' Generate/Send button before the first send finishes -- guard against
+    ' that overwriting the pending state out from under the first send.
+    If gSendInProgress Then Exit Sub
+    gSendInProgress = True
+
+    gPendingKind = kind
+    gPendingStatusID = statusID
+    gPendingTo = strTo
+    gPendingCc = strCc
+    gPendingSubj = strSubject
+    gPendingBody = strBodyHtml
+    gPendingAttach = strAttachmentPath
+    gPendingExtraAttach = arrExtraAttachments
+
+    document.body.style.cursor = "wait"
+    document.getElementById(statusID).style.color = "#666"
+    document.getElementById(statusID).innerText = "Opening Outlook -- please wait..."
+
+    window.setTimeout "FinishSend", 30
+End Sub
+
+Sub FinishSend
+    On Error Resume Next
+    Dim ok
+    ok = SendViaOutlook(gPendingTo, gPendingCc, gPendingSubj, gPendingBody, gPendingAttach, gPendingExtraAttach)
+
+    gSendInProgress = False
+    document.body.style.cursor = "default"
+    document.getElementById(gPendingStatusID).style.color = "#2e7d32"
+
+    Select Case gPendingKind
+        Case "tab1"
+            If ok Then
+                LogEmail gTab1PendingTicket, gTab1PendingAgentName, gTab1PendingAgentEmail
+                document.getElementById("status1").innerText = "Email draft opened and logged."
+                document.getElementById("ctrlID").value = ""
+                document.getElementById("ctrlTicket1").value = ""
+                document.getElementById("ctrlAgent").selectedIndex = 0
+            Else
+                document.getElementById("status1").innerText = ""
+            End If
+
+        Case "tab2"
+            If ok Then
+                document.getElementById("status2").innerText = "Email draft opened."
+                document.getElementById("ctrlTicket2").value = ""
+                document.getElementById("ctrlProblem").value = ""
+                document.getElementById("ctrlUserID").value = ""
+                document.getElementById("ctrlErrorMsg").value = ""
+                document.getElementById("ctrlDetails").value = ""
+                document.getElementById("ctrlOriginalTicket").value = ""
+                ClearTab2Attachments
+            Else
+                document.getElementById("status2").innerText = ""
+            End If
+
+        Case "sev"
+            Dim idx2
+            idx2 = gPendingSevIdx
+            If ok Then
+                document.getElementById("svStatus" & idx2).innerText = "Email draft opened."
+                document.getElementById("svTicket" & idx2).value = ""
+                document.getElementById("svError" & idx2).value = ""
+                document.getElementById("svListTickets" & idx2).value = ""
+                document.getElementById("svLogText" & idx2).value = ""
+                document.getElementById("svLocation" & idx2).value = ""
+                document.getElementById("svLogFile" & idx2).value = ""
+                document.getElementById("svListCount" & idx2).innerText = "0 tickets"
+            Else
+                document.getElementById("svStatus" & idx2).innerText = ""
+            End If
+    End Select
+End Sub
+' ============================================================
+' END: BeginSend / FinishSend
 ' ============================================================
 
 ' ============================================================
@@ -625,18 +856,15 @@ Sub ValidateAndSend1
     Dim subj, body
     subj = "URGENT: Ticket #" & ctrlTicket.value & " - ID " & ctrlID.value
     body = "<p>Greetings,</p>" & _
-           "<p>Your help desk ticket, " & ctrlTicket.value & ", has been assigned to the following agent: " & agentName & ".</p>" & _
-           "<p>" & agentName & " should contact you shortly regarding your issue. The best way to contact the agent is through Microsoft Teams or email.</p>" & _
+           "<p>Your help desk ticket, " & EscapeHtml(ctrlTicket.value) & ", has been assigned to the following agent: " & EscapeHtml(agentName) & ".</p>" & _
+           "<p>" & EscapeHtml(agentName) & " should contact you shortly regarding your issue. The best way to contact the agent is through Microsoft Teams or email.</p>" & _
            "<p>The queue manager will review the ticket and may contact you to appropriately evaluate the priority of this issue.</p>" & _
            "<p>Have a nice day!</p>"
 
-    If SendViaOutlook(recipientEmail, "", subj, body, "", Array()) Then
-        LogEmail ctrlTicket.value, agentName, agentEmail
-        document.getElementById("status1").innerText = "Email draft opened and logged."
-        ctrlID.value = ""
-        ctrlTicket.value = ""
-        ctrlAgent.selectedIndex = 0
-    End If
+    gTab1PendingTicket = ctrlTicket.value
+    gTab1PendingAgentName = agentName
+    gTab1PendingAgentEmail = agentEmail
+    BeginSend "tab1", "status1", recipientEmail, "", subj, body, "", Array()
 End Sub
 
 ' ============================================================
@@ -663,29 +891,52 @@ Sub InitLog
         Exit Sub
     End If
 
-    Dim f, line, parts, maxID
+    ' Read every line into memory first. We still need to scan the WHOLE
+    ' file once to find the highest LogID so new entries keep numbering
+    ' correctly, but only the last MAX_LOG_ROWS_SHOWN of them get inserted
+    ' into the DOM table below -- that DOM insert (not the file read) is
+    ' what made startup get slower the longer this file was in use.
+    Dim f, line, maxID, allLines(), lineCount
     maxID = 0
+    lineCount = 0
+    ReDim allLines(1000)
     Set f = gFso.OpenTextFile(gLogFilePath, 1) ' ForReading
     If Not f.AtEndOfStream Then f.ReadLine ' skip header
     Do While Not f.AtEndOfStream
         line = f.ReadLine
         If Trim(line) <> "" Then
-            parts = Split(line, ",")
-            If UBound(parts) >= 4 Then
-                AddLogRow parts(0), parts(1), parts(2), parts(3)
-                If CLng(parts(0)) > maxID Then maxID = CLng(parts(0))
-            End If
+            If lineCount > UBound(allLines) Then ReDim Preserve allLines(UBound(allLines) + 1000)
+            allLines(lineCount) = line
+            lineCount = lineCount + 1
         End If
     Loop
     f.Close
+
+    Dim i, parts, startIdx
+    For i = 0 To lineCount - 1
+        parts = ParseCsvLine(allLines(i))
+        If UBound(parts) >= 4 Then
+            If IsNumeric(parts(0)) Then
+                If CLng(parts(0)) > maxID Then maxID = CLng(parts(0))
+            End If
+        End If
+    Next
     gNextLogID = maxID + 1
+
+    startIdx = 0
+    If lineCount > MAX_LOG_ROWS_SHOWN Then startIdx = lineCount - MAX_LOG_ROWS_SHOWN
+    For i = startIdx To lineCount - 1
+        parts = ParseCsvLine(allLines(i))
+        If UBound(parts) >= 4 Then AddLogRow parts(0), parts(1), parts(2), parts(3)
+    Next
 End Sub
 
 Sub LogEmail(ticketNum, agentName, agentEmail)
     On Error Resume Next
     Dim f, line, ts
     ts = Now
-    line = gNextLogID & "," & ticketNum & "," & agentName & "," & agentEmail & "," & ts
+    line = CsvEscapeField(gNextLogID) & "," & CsvEscapeField(ticketNum) & "," & _
+           CsvEscapeField(agentName) & "," & CsvEscapeField(agentEmail) & "," & CsvEscapeField(ts)
 
     Set f = gFso.OpenTextFile(gLogFilePath, 8, True) ' ForAppending
     f.WriteLine line
@@ -831,27 +1082,18 @@ Sub ValidateAndSend2
 
     errLine = ""
     If Trim(ctrlErrorMsg.value) <> "" Then
-        errLine = "Error Message: " & ctrlErrorMsg.value & "<br>"
+        errLine = "Error Message: " & NlToBr(EscapeHtml(ctrlErrorMsg.value)) & "<br>"
     End If
 
     body = "<p><b>To Support Team:</b></p>" & _
-           "<p>Ticket Number: " & ctrlTicket2.value & "<br>" & _
-           "General Problem: " & ctrlProblem.value & "<br>" & _
-           "User ID: " & ctrlUserID.value & "<br>" & _
+           "<p>Ticket Number: " & EscapeHtml(ctrlTicket2.value) & "<br>" & _
+           "General Problem: " & NlToBr(EscapeHtml(ctrlProblem.value)) & "<br>" & _
+           "User ID: " & EscapeHtml(ctrlUserID.value) & "<br>" & _
            errLine & _
-           "Important Details for the Support Team: " & ctrlDetails.value & "<br>" & _
-           "Original Ticket: " & ctrlOriginalTicket.value & "</p>"
+           "Important Details for the Support Team: " & NlToBr(EscapeHtml(ctrlDetails.value)) & "<br>" & _
+           "Original Ticket: " & NlToBr(EscapeHtml(ctrlOriginalTicket.value)) & "</p>"
 
-    If SendViaOutlook(Tab2ToEmails, Tab2CcEmails, subj, body, "", GetTab2AttachmentArray()) Then
-        document.getElementById("status2").innerText = "Email draft opened."
-        ctrlTicket2.value = ""
-        ctrlProblem.value = ""
-        ctrlUserID.value = ""
-        ctrlErrorMsg.value = ""
-        ctrlDetails.value = ""
-        ctrlOriginalTicket.value = ""
-        ClearTab2Attachments
-    End If
+    BeginSend "tab2", "status2", Tab2ToEmails, Tab2CcEmails, subj, body, "", GetTab2AttachmentArray()
 End Sub
 
 ' ============================================================
@@ -908,7 +1150,7 @@ Sub GenerateSeverityEmail(idx)
 
     logSection = ""
     If Trim(ctrlLogText.value) <> "" Then
-        logSection = "<p><b>Log Details:</b><br>" & Replace(ctrlLogText.value, vbCrLf, "<br>") & "</p>"
+        logSection = "<p><b>Log Details:</b><br>" & NlToBr(EscapeHtml(ctrlLogText.value)) & "</p>"
     End If
 
     If SevTabIntro(idx) <> "" Then
@@ -918,22 +1160,14 @@ Sub GenerateSeverityEmail(idx)
     End If
 
     body = introHtml & _
-           "<p>Ticket Number: " & ctrlTicket.value & "<br>" & _
-           "Error Message: " & Replace(ctrlError.value, vbCrLf, "<br>") & "<br>" & _
-           "List of Ticket(s): " & ctrlListTickets.value & "<br>" & _
-           "User Location: " & ctrlLocation.value & "</p>" & _
+           "<p>Ticket Number: " & EscapeHtml(ctrlTicket.value) & "<br>" & _
+           "Error Message: " & NlToBr(EscapeHtml(ctrlError.value)) & "<br>" & _
+           "List of Ticket(s): " & EscapeHtml(ctrlListTickets.value) & "<br>" & _
+           "User Location: " & EscapeHtml(ctrlLocation.value) & "</p>" & _
            logSection
 
-    If SendViaOutlook(SevTabEmail(idx), "", subj, body, ctrlLogFile.value, Array()) Then
-        document.getElementById("svStatus" & idx).innerText = "Email draft opened."
-        ctrlTicket.value = ""
-        ctrlError.value = ""
-        ctrlListTickets.value = ""
-        ctrlLogText.value = ""
-        ctrlLocation.value = ""
-        ctrlLogFile.value = ""
-        document.getElementById("svListCount" & idx).innerText = "0 tickets"
-    End If
+    gPendingSevIdx = idx
+    BeginSend "sev", "svStatus" & idx, SevTabEmail(idx), "", subj, body, ctrlLogFile.value, Array()
 End Sub
 
 Sub GenerateSeverityEmail1 : GenerateSeverityEmail 1 : End Sub
@@ -1406,6 +1640,23 @@ End Sub
                 <li>Emails open as drafts (<code>.Display</code>), not sent automatically, so a human reviews before sending. Swap to <code>.Send</code> only if that's intentional.</li>
                 <li>Attachments use <code>objMail.Attachments.Add</code> with the path from a file &lt;input&gt;. HTA runs in the Local Machine security zone, so file inputs expose the real full path, unlike a normal browser's fake path.</li>
                 <li>Since <code>Attachments.Add</code> only takes one path at a time, <code>SendViaOutlook</code> takes both a single <code>strAttachmentPath</code> (used by Category 2) and an <code>arrExtraAttachments</code> array (used by Tab 2's "Add Attachments" queue, see <code>gTab2Attachments</code> / <code>AddTab2Attachment</code> / <code>GetTab2AttachmentArray</code>). Callers that don't need it pass <code>Array()</code>.</li>
+                <li><b>Missing attachments now warn instead of vanishing silently (fixed 2026-09-11).</b> If a file selected earlier gets moved, renamed, or deleted before the draft is built, <code>SendViaOutlook</code> used to just skip it via <code>FileExists</code> with no feedback -- the user believed it was attached when it wasn't. It now collects every missing path into <code>missingAttachments</code> and shows one <code>MsgBox</code> naming them (still before <code>Display()</code>) before opening the draft without them.</li>
+            </ul>
+
+            <h3>Reliability fixes (2026-09-11)</h3>
+            <ul>
+                <li><b>User-typed/pasted text is now HTML-escaped before it goes into an email body.</b> <code>EscapeHtml()</code> (escapes <code>&amp;</code>, <code>&lt;</code>, <code>&gt;</code>) is applied to every free-text field value spliced into a <code>strBodyHtml</code> string in <code>ValidateAndSend1</code>, <code>ValidateAndSend2</code>, and <code>GenerateSeverityEmail</code>. Before this, a pasted error message or log snippet containing angle brackets or an ampersand (stack traces, generics like <code>List&lt;String&gt;</code>, XML/HTML fragments -- all common in support tickets) got interpreted as real markup by Outlook's renderer and could silently eat or mangle part of the email, with nothing visibly wrong until the recipient read a garbled message.</li>
+                <li><b>Line breaks in pasted text are now preserved reliably.</b> <code>NlToBr()</code> normalizes CRLF, lone LF, and lone CR to <code>&lt;br&gt;</code> before the text is inserted. The old code only handled CRLF (<code>Replace(x, vbCrLf, "&lt;br&gt;")</code>), so text pasted from sources that use bare <code>\n</code> (common from web textareas/non-Windows tools) lost its line breaks and ran together as one paragraph. Apply <code>EscapeHtml()</code> first, then <code>NlToBr()</code> on the result -- reversing the order would escape the <code>&lt;br&gt;</code> tags this function inserts.</li>
+                <li>Both helpers live near the top of the script, right after the <code>gLogFilePath</code>/<code>gFso</code> declarations, alongside <code>CsvEscapeField</code>/<code>ParseCsvLine</code> (see Log section above).</li>
+            </ul>
+
+            <h3>Deferred send / "please wait" indicator (fixed 2026-09-11)</h3>
+            <ul>
+                <li><b>The problem:</b> <code>CreateObject("Outlook.Application")</code> launches Outlook if it isn't already running, which can take several seconds. Because HTA/VBScript is single-threaded, the ENTIRE UI -- not just the button clicked -- was unresponsive that whole time with zero visual feedback, which reads as a crash to a normal user (especially first thing in the morning before anyone's opened Outlook yet).</li>
+                <li><b>Why a simple "please wait" message didn't just work:</b> setting a status message and cursor immediately before the blocking call does NOT actually paint on screen first -- old IE's rendering engine queues the repaint but doesn't flush it until the current script yields back to the browser's message loop. Since the blocking <code>CreateObject</code>/<code>Display</code> call happens in the same script tick, the message would never actually be visible until AFTER the freeze was already over.</li>
+                <li><b>The fix:</b> <code>ValidateAndSend1</code>, <code>ValidateAndSend2</code>, and <code>GenerateSeverityEmail</code> now build the subject/body/recipients as before, then call <code>BeginSend(kind, statusID, ...)</code> instead of <code>SendViaOutlook(...)</code> directly. <code>BeginSend</code> stashes everything needed into module-level <code>gPending*</code> globals, sets the wait cursor + "Opening Outlook -- please wait..." status text, and defers the actual send via <code>window.setTimeout "FinishSend", 30</code>. Returning from <code>BeginSend</code> lets the engine paint before the timer fires 30ms later, so the message is genuinely visible during the freeze instead of only after it. <code>FinishSend</code> calls <code>SendViaOutlook</code> with the stashed args, then does the per-tab success/failure cleanup (logging, clearing fields, resetting the status text) via a <code>Select Case gPendingKind</code> ("tab1" / "tab2" / "sev", using <code>gPendingSevIdx</code> for which severity tab).</li>
+                <li><b>gSendInProgress guard:</b> the 30ms deferral window is enough time for a user to click a second Generate/Send button before the first send finishes, which would overwrite the <code>gPending*</code> globals out from under the in-flight send. <code>BeginSend</code> exits immediately if <code>gSendInProgress</code> is already <code>True</code>; <code>FinishSend</code> clears it once the send completes. This didn't exist before because the old code was fully synchronous with no such window.</li>
+                <li>This still doesn't make the Outlook launch itself non-blocking -- there's no real threading available in VBScript/HTA -- it just makes the wait visible and explained instead of looking like a freeze.</li>
             </ul>
 
             <h3>Rendering quirks (mshta / old IE engine)</h3>
@@ -1430,6 +1681,8 @@ End Sub
             <h3>Log</h3>
             <ul>
                 <li>Tab 1's Agent Log is persisted to <code>EmailLog.csv</code> next to this .hta (LogID, TicketNumber, AgentName, AgentEmail, Timestamp) and reloaded into the table on startup via <code>InitLog</code>.</li>
+                <li><b>CSV fields are properly quoted (fixed 2026-09-11).</b> Ticket numbers/agent names are free-typed text and can contain a comma (e.g. a pasted "1,234") or a quote -- writing/reading them with a plain <code>&amp;</code>-join and <code>Split(line, ",")</code> silently shifted every column after the first comma, corrupting that row permanently. <code>CsvEscapeField()</code> (write) and <code>ParseCsvLine()</code> (read) now do minimal RFC-4180-style quoting -- a field is wrapped in quotes (with internal quotes doubled) only if it contains a comma, quote, or line break. Any old rows already written by the previous unquoted version are NOT retroactively fixed and may still parse wrong.</li>
+                <li><b>Startup only renders the last <code>MAX_LOG_ROWS_SHOWN</code> (200) rows (fixed 2026-09-11).</b> <code>InitLog</code> still reads the entire file every launch to compute the next LogID correctly, but previously also called <code>AddLogRow</code> (a DOM <code>insertRow</code>) for every historical line -- with a file that's been growing for months, that made startup progressively slower forever. The full history still lives in <code>EmailLog.csv</code> itself (open it in Excel to see everything); only the on-screen table is capped. Raise <code>MAX_LOG_ROWS_SHOWN</code> if the team wants more history visible at a cost to startup time.</li>
             </ul>
 
             <h3>Security note</h3>
