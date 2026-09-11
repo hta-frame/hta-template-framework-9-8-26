@@ -467,12 +467,47 @@ Function LoadSignature()
 
     ' Read with ADODB.Stream rather than FileSystemObject, so accented
     ' letters and other non-ASCII characters in the signature come through
-    ' correctly -- Outlook saves these files as UTF-8, and FSO's plain
-    ' text reader assumes the system codepage instead and can mangle them.
+    ' correctly -- FSO's plain text reader assumes the system codepage and
+    ' can mangle them.
+    '
+    ' Detect the file's own declared charset instead of assuming UTF-8
+    ' (fixed 2026-09-11): Word/Outlook actually write these files in the
+    ' SYSTEM's ANSI codepage -- on this machine (and likely most Western
+    ' Windows installs) that's windows-1252, NOT UTF-8, despite what an
+    ' earlier version of this function assumed. Reading a windows-1252
+    ' file as UTF-8 corrupts every accented character (an "e" with an
+    ' accent came back as "?" instead of the real letter). ISO-8859-1 is
+    ' used for this first, safe peek because it maps every byte 1:1 to a
+    ' character with no risk of a decode error regardless of the file's
+    ' real encoding -- and the <meta charset=...> declaration itself is
+    ' always plain ASCII, which reads back identically whether the probe
+    ' charset is ISO-8859-1, UTF-8, or windows-1252.
+    Dim probeStream, probeText, detectedCharset, reCharset
+    Set probeStream = CreateObject("ADODB.Stream")
+    probeStream.Type = 2 ' adTypeText
+    probeStream.Charset = "iso-8859-1"
+    probeStream.Open
+    probeStream.LoadFromFile newestFile.Path
+    probeText = probeStream.ReadText
+    probeStream.Close
+
+    detectedCharset = "windows-1252" ' sensible default if no charset is declared
+    Set reCharset = New RegExp
+    reCharset.Pattern = "charset=([a-zA-Z0-9\-_]+)"
+    reCharset.IgnoreCase = True
+    If reCharset.Test(probeText) Then
+        detectedCharset = reCharset.Execute(probeText)(0).SubMatches(0)
+    End If
+
     Dim stream, rawHtml
     Set stream = CreateObject("ADODB.Stream")
     stream.Type = 2 ' adTypeText
-    stream.Charset = "utf-8"
+    Err.Clear
+    stream.Charset = detectedCharset
+    If Err.Number <> 0 Then
+        Err.Clear
+        stream.Charset = "windows-1252" ' detected name wasn't one ADODB recognizes -- fall back
+    End If
     stream.Open
     stream.LoadFromFile newestFile.Path
     rawHtml = stream.ReadText
