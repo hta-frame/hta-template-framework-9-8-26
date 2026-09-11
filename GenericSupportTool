@@ -1,6 +1,6 @@
 <html>
 <head>
-<title>Enter Your Title Here</title>
+<title>{{APP_TITLE}}</title>
 <HTA:APPLICATION
     APPLICATIONNAME="GenericSupportTool"
     ID="GenericSupportToolHTA"
@@ -274,11 +274,11 @@ Tab2CcEmails = "cc1@example.com;cc2@example.com;cc3@example.com;cc4@example.com;
 '                    button sends to (only one address per template --
 '                    not a semicolon list like Tab2ToEmails above)
 Dim SevTabName(5), SevTabDesc(5), SevTabEmail(5)
-SevTabName(1) = "Enter Your Tab 1 Here" : SevTabDesc(1) = "Enter your description here." : SevTabEmail(1) = "team1@example.com" ' Tab 1 recipient
-SevTabName(2) = "Enter Your Tab 2 Here" : SevTabDesc(2) = "Enter your description here." : SevTabEmail(2) = "team2@example.com" ' Tab 2 recipient
-SevTabName(3) = "Enter Your Tab 3 Here" : SevTabDesc(3) = "Enter your description here." : SevTabEmail(3) = "team3@example.com" ' Tab 3 recipient
-SevTabName(4) = "Enter Your Tab 4 Here" : SevTabDesc(4) = "Enter your description here." : SevTabEmail(4) = "team4@example.com" ' Tab 4 recipient
-SevTabName(5) = "Enter Your Tab 5 Here" : SevTabDesc(5) = "Enter your description here." : SevTabEmail(5) = "team5@example.com" ' Tab 5 recipient
+SevTabName(1) = "{{SEV1_NAME}}" : SevTabDesc(1) = "{{SEV1_PANEL_DESC}}" : SevTabEmail(1) = "team1@example.com" ' Tab 1 recipient
+SevTabName(2) = "{{SEV2_NAME}}" : SevTabDesc(2) = "{{SEV2_PANEL_DESC}}" : SevTabEmail(2) = "team2@example.com" ' Tab 2 recipient
+SevTabName(3) = "{{SEV3_NAME}}" : SevTabDesc(3) = "{{SEV3_PANEL_DESC}}" : SevTabEmail(3) = "team3@example.com" ' Tab 3 recipient
+SevTabName(4) = "{{SEV4_NAME}}" : SevTabDesc(4) = "{{SEV4_PANEL_DESC}}" : SevTabEmail(4) = "team4@example.com" ' Tab 4 recipient
+SevTabName(5) = "{{SEV5_NAME}}" : SevTabDesc(5) = "{{SEV5_PANEL_DESC}}" : SevTabEmail(5) = "team5@example.com" ' Tab 5 recipient
 
 ' Optional custom intro paragraph per tab (used instead of the generic "<b>Tab Name</b>" heading).
 ' Leave an entry blank ("") to fall back to the generic heading.
@@ -301,11 +301,12 @@ Dim gLogFilePath, gNextLogID, gFso, gLastPanelID
 Set gFso = CreateObject("Scripting.FileSystemObject")
 gLastPanelID = "tab1"
 
-' Only the most recent N rows get re-inserted into the on-screen log table
-' at startup. The full history still lives in EmailLog.csv (open it in
-' Excel to see everything) -- this cap just stops startup from getting
-' slower and slower forever as the file grows, since re-inserting
-' thousands of historical DOM rows on every launch is what was doing that.
+' The on-screen log table only ever shows TODAY's rows (see InitLog) -- this
+' constant is just a safety cap on top of that, in case an unusually high
+' number of urgents came in on a single day, so a runaway day still can't
+' make startup slow by re-inserting an unbounded number of DOM rows. The
+' full history for every day still lives in EmailLog.csv (open it in Excel
+' to see everything); only the on-screen table is limited.
 Const MAX_LOG_ROWS_SHOWN = 200
 
 ' ============================================================
@@ -405,8 +406,8 @@ End Function
 ' ============================================================
 
 ' ============================================================
-' START: LoadSignature -- reads the user's default "New Message"
-' signature straight off disk, instead of asking Outlook for it.
+' START: LoadSignature -- reads the user's signature straight off disk,
+' instead of asking Outlook for it or relying on the registry.
 ' ============================================================
 '
 ' Why this exists: the normal way to get the signature is to let Outlook
@@ -416,47 +417,53 @@ End Function
 ' blocks that: HTMLBody never picks up the signature, no matter how long
 ' the script waits, so the email goes out blank or signature-less.
 '
-' The workaround: Outlook ALWAYS writes every signature to a plain .htm
-' file on disk, at:
+' An earlier version of this function read the registry
+' (HKCU\Software\Microsoft\Office\<version>\Common\MailSettings\NewSignature)
+' to find which signature is the default for new messages, then read that
+' signature's .htm file. That registry value is only ever set if someone
+' has explicitly chosen a "New messages" signature in classic Outlook's
+' Signature settings -- on a machine where that was never done (or where
+' the primary mail client is the separate "Outlook for Windows" app, which
+' doesn't write to this key at all), NewSignature is simply absent, so the
+' old function always returned "" even though real signature files exist
+' on disk. This version skips the registry entirely and just looks
+' directly in the Signatures folder.
+'
+' Outlook ALWAYS writes every signature to a plain .htm file on disk, at:
 '     %APPDATA%\Microsoft\Signatures\<Signature Name>.htm
-' and it separately remembers, in the registry, which signature is the
-' default for new messages:
-'     HKCU\Software\Microsoft\Office\<version>\Common\MailSettings\NewSignature
-' So this function (1) reads that registry value to get the signature's
-' NAME, then (2) reads that .htm file's contents directly off disk. Since
-' neither step touches Outlook's Object Model, the policy above never
-' comes into play.
+' If there's more than one .htm file there (one per named signature),
+' there's no registry-free way to know which one is "the" default, so this
+' picks whichever one was modified most recently -- the signature someone
+' actually edited/picked last is a reasonable simple proxy for "the one
+' currently in use." If that guess is ever wrong for a particular setup,
+' either remove the unwanted .htm file(s) from the Signatures folder, or
+' hardcode a specific filename here instead of scanning.
 '
 ' Returns: the signature as an HTML string, ready to append to another
 ' email's body (just the inside of its <body>...</body>, so we don't end
 ' up nesting a second <html>/<head> inside the message). Returns "" if no
-' default signature is configured, or its file can't be found -- callers
-' should treat that as "no signature," not an error; the email still
-' works fine, it just won't have one.
+' .htm signature file can be found -- callers should treat that as "no
+' signature," not an error; the email still works fine, it just won't
+' have one.
 Function LoadSignature()
     On Error Resume Next
     LoadSignature = ""
 
-    Dim shell
-    Set shell = CreateObject("WScript.Shell")
+    Dim sigPath, folder, file, newestFile, newestTime
+    sigPath = CreateObject("WScript.Shell").ExpandEnvironmentStrings("%APPDATA%") & "\Microsoft\Signatures"
+    If Not gFso.FolderExists(sigPath) Then Exit Function
 
-    ' The registry key lives under a version-specific path. Try the
-    ' versions likely to be installed (16.0 = Office 2016/2019/2021/365,
-    ' 15.0 = Office 2013, 14.0 = Office 2010) until one has a value set.
-    Dim officeVersions, verIndex, sigName
-    officeVersions = Array("16.0", "15.0", "14.0")
-    sigName = ""
-    For verIndex = 0 To UBound(officeVersions)
-        Err.Clear
-        sigName = shell.RegRead("HKCU\Software\Microsoft\Office\" & officeVersions(verIndex) & "\Common\MailSettings\NewSignature")
-        If Err.Number = 0 And Trim(sigName) <> "" Then Exit For
-        sigName = ""
+    Set folder = gFso.GetFolder(sigPath)
+    newestTime = 0
+    For Each file In folder.Files
+        If LCase(gFso.GetExtensionName(file.Name)) = "htm" Then
+            If CDbl(file.DateLastModified) > newestTime Then
+                newestTime = CDbl(file.DateLastModified)
+                Set newestFile = file
+            End If
+        End If
     Next
-    If sigName = "" Then Exit Function ' no default "new message" signature configured
-
-    Dim sigFilePath
-    sigFilePath = shell.ExpandEnvironmentStrings("%APPDATA%") & "\Microsoft\Signatures\" & sigName & ".htm"
-    If Not gFso.FileExists(sigFilePath) Then Exit Function
+    If newestFile Is Nothing Then Exit Function ' no .htm signature file found
 
     ' Read with ADODB.Stream rather than FileSystemObject, so accented
     ' letters and other non-ASCII characters in the signature come through
@@ -467,22 +474,45 @@ Function LoadSignature()
     stream.Type = 2 ' adTypeText
     stream.Charset = "utf-8"
     stream.Open
-    stream.LoadFromFile sigFilePath
+    stream.LoadFromFile newestFile.Path
     rawHtml = stream.ReadText
     stream.Close
 
-    ' Pull out just the <body>...</body> contents, so this can be dropped
-    ' straight into another email's HTMLBody.
-    Dim re, matches
+    ' Signatures saved by Word define their font/size/spacing through CSS
+    ' classes (p.MsoNormal, etc.) in <style> block(s) inside <head> -- the
+    ' <body> markup itself is just bare <p class=MsoNormal>...</p> with no
+    ' inline styling at all. An earlier version of this function grabbed
+    ' ONLY the <body>...</body> contents and discarded those <style>
+    ' blocks, so the pasted-in signature lost its font/size/margins and
+    ' fell back to whatever default styling the surrounding email
+    ' happened to use -- an unwanted formatting CHANGE, not a fix. To make
+    ' the signature look EXACTLY like it does in the .htm file, every
+    ' <style> block from <head> is carried over verbatim, immediately
+    ' followed by the <body> contents, in the same order as the source
+    ' file. Nothing here is reformatted, added, or removed -- it's the
+    ' file's own style rules and its own body markup, reassembled.
+    Dim re, m, styles
+    styles = ""
     Set re = New RegExp
-    re.Pattern = "<body[^>]*>([\s\S]*)<\/body>"
+    re.Pattern = "<style[^>]*>[\s\S]*?<\/style>"
     re.IgnoreCase = True
+    re.Global = True
     If re.Test(rawHtml) Then
-        Set matches = re.Execute(rawHtml)
-        LoadSignature = matches(0).SubMatches(0)
-    Else
-        LoadSignature = rawHtml ' couldn't find a <body> tag -- fall back to the whole file
+        For Each m In re.Execute(rawHtml)
+            styles = styles & m.Value
+        Next
     End If
+
+    Dim bodyHtml
+    re.Global = False
+    re.Pattern = "<body[^>]*>([\s\S]*)<\/body>"
+    If re.Test(rawHtml) Then
+        bodyHtml = re.Execute(rawHtml)(0).SubMatches(0)
+    Else
+        bodyHtml = rawHtml ' couldn't find a <body> tag -- fall back to the whole file
+    End If
+
+    LoadSignature = styles & bodyHtml
 End Function
 ' ============================================================
 ' END: LoadSignature
@@ -868,6 +898,62 @@ Sub ValidateAndSend1
 End Sub
 
 ' ============================================================
+' START: GeneratePassDown -- copies a shift-handoff summary (an optional
+' note plus the last 5 rows already shown in the Agent Log table) to the
+' clipboard, so it can be pasted into Teams or any other chat tool.
+' ============================================================
+' Reads straight from the on-screen table (tbody#logBody) rather than
+' re-reading EmailLog.csv, since the table is already the up-to-date,
+' today-only, newest-first view the agent is looking at -- its first 5
+' rows ARE "the last 5 assigned urgent tickets" by construction (see
+' AddLogRow's insertRow(0), which keeps the newest entry on top).
+Sub GeneratePassDown
+    On Error Resume Next
+
+    Dim noteText
+    noteText = InputBox("Add a note for the next agent (optional) -- it gets included in the copied pass-down text below the ticket list:", "Pass Down Information")
+
+    Dim tbody, rowCount, maxRows
+    Set tbody = document.getElementById("logBody")
+    rowCount = tbody.rows.Length
+    maxRows = 5
+    If rowCount < maxRows Then maxRows = rowCount
+
+    Dim txt
+    txt = "PASS DOWN INFORMATION -- " & Now & vbCrLf & vbCrLf
+
+    If Trim(noteText) <> "" Then
+        txt = txt & "Note: " & noteText & vbCrLf & vbCrLf
+    End If
+
+    txt = txt & "Last " & maxRows & " Assigned Urgent Ticket(s):" & vbCrLf
+
+    If maxRows = 0 Then
+        txt = txt & "  (no urgent tickets assigned yet today)" & vbCrLf
+    Else
+        Dim i, row, cells
+        For i = 0 To maxRows - 1
+            Set row = tbody.rows(i)
+            Set cells = row.cells
+            txt = txt & "  - Ticket " & cells(1).innerText & " | Agent: " & cells(2).innerText & _
+                  " (" & cells(3).innerText & ") | " & cells(4).innerText & vbCrLf
+        Next
+    End If
+
+    Err.Clear
+    window.clipboardData.setData "Text", txt
+
+    If Err.Number <> 0 Then
+        MsgBox "Could not copy to clipboard: " & Err.Description
+    Else
+        document.getElementById("status1").innerText = "Pass-down info copied to clipboard -- paste it into Teams or wherever it's needed."
+    End If
+End Sub
+' ============================================================
+' END: GeneratePassDown
+' ============================================================
+
+' ============================================================
 ' Log handling (persisted to EmailLog.csv next to this HTA)
 ' ============================================================
 Function ScriptFolder
@@ -893,9 +979,9 @@ Sub InitLog
 
     ' Read every line into memory first. We still need to scan the WHOLE
     ' file once to find the highest LogID so new entries keep numbering
-    ' correctly, but only the last MAX_LOG_ROWS_SHOWN of them get inserted
-    ' into the DOM table below -- that DOM insert (not the file read) is
-    ' what made startup get slower the longer this file was in use.
+    ' correctly, but only today's rows get inserted into the DOM table
+    ' below -- that DOM insert (not the file read) is what made startup
+    ' get slower the longer this file was in use.
     Dim f, line, maxID, allLines(), lineCount
     maxID = 0
     lineCount = 0
@@ -912,22 +998,38 @@ Sub InitLog
     Loop
     f.Close
 
-    Dim i, parts, startIdx
+    ' Single pass over every line: (1) find the highest LogID across the
+    ' WHOLE file regardless of date, so new entries keep numbering
+    ' correctly even across day boundaries, and (2) collect just today's
+    ' rows (by the Timestamp field) for display -- only today's assignments
+    ' are relevant for "who's been assigned what so far today," and
+    ' showing yesterday's (or older) entries just adds clutter/confusion
+    ' about what's still open. MAX_LOG_ROWS_SHOWN is kept as a safety cap
+    ' in case an unusually high number of urgents come in on one day.
+    Dim i, parts, todayIdx(), todayCount, startIdx
+    ReDim todayIdx(lineCount)
+    todayCount = 0
     For i = 0 To lineCount - 1
         parts = ParseCsvLine(allLines(i))
         If UBound(parts) >= 4 Then
             If IsNumeric(parts(0)) Then
                 If CLng(parts(0)) > maxID Then maxID = CLng(parts(0))
             End If
+            If IsDate(parts(4)) Then
+                If DateValue(parts(4)) = Date Then
+                    todayIdx(todayCount) = i
+                    todayCount = todayCount + 1
+                End If
+            End If
         End If
     Next
     gNextLogID = maxID + 1
 
     startIdx = 0
-    If lineCount > MAX_LOG_ROWS_SHOWN Then startIdx = lineCount - MAX_LOG_ROWS_SHOWN
-    For i = startIdx To lineCount - 1
-        parts = ParseCsvLine(allLines(i))
-        If UBound(parts) >= 4 Then AddLogRow parts(0), parts(1), parts(2), parts(3)
+    If todayCount > MAX_LOG_ROWS_SHOWN Then startIdx = todayCount - MAX_LOG_ROWS_SHOWN
+    For i = startIdx To todayCount - 1
+        parts = ParseCsvLine(allLines(todayIdx(i)))
+        AddLogRow parts(0), parts(1), parts(2), parts(3), parts(4)
     Next
 End Sub
 
@@ -942,22 +1044,30 @@ Sub LogEmail(ticketNum, agentName, agentEmail)
     f.WriteLine line
     f.Close
 
-    AddLogRow gNextLogID, ticketNum, agentName, agentEmail
+    AddLogRow gNextLogID, ticketNum, agentName, agentEmail, ts
     gNextLogID = gNextLogID + 1
 End Sub
 
-Sub AddLogRow(logID, ticketNum, agentName, agentEmail)
+Sub AddLogRow(logID, ticketNum, agentName, agentEmail, ts)
     On Error Resume Next
     Dim tbody, row
     Set tbody = document.getElementById("logBody")
 
     ' Using createElement("tr") + innerHTML is unreliable in the HTA/old-IE
     ' rendering engine -- table rows/cells must be built with insertRow/insertCell.
-    Set row = tbody.insertRow(-1)
+    ' Inserting at index 0 (instead of -1/append) puts every new row above
+    ' the previous ones, so the table always reads newest-first -- both
+    ' when replaying today's history in chronological order at startup
+    ' (each older row gets pushed down as a newer one is added above it)
+    ' and when a brand-new entry is logged live during the session (it
+    ' lands at the very top, since it's newer than everything already
+    ' shown).
+    Set row = tbody.insertRow(0)
     row.insertCell(-1).innerText = logID
     row.insertCell(-1).innerText = ticketNum
     row.insertCell(-1).innerText = agentName
     row.insertCell(-1).innerText = agentEmail
+    row.insertCell(-1).innerText = ts
 End Sub
 
 ' ============================================================
@@ -1244,7 +1354,7 @@ End Sub
 <body>
 
 <div id="appHeader">
-    <h1>Enter Your Title Here</h1>
+    <h1>{{APP_TITLE}}</h1>
 </div>
 
 <div id="categoryNav">
@@ -1257,24 +1367,24 @@ End Sub
 </div>
 
 <div id="subNavGeneral">
-    <button id="tabBtn1" class="tab-btn tab-btn-red" onclick="ShowTab1">Enter Your Tab 1 Here</button>
-    <button id="tabBtn2" class="tab-btn tab-btn-blue" onclick="ShowTab2">Enter Your Tab 2 Here</button>
+    <button id="tabBtn1" class="tab-btn tab-btn-red" onclick="ShowTab1">{{TAB1_NAME}}</button>
+    <button id="tabBtn2" class="tab-btn tab-btn-blue" onclick="ShowTab2">{{TAB2_NAME}}</button>
 </div>
 
 <div id="subNavSeverity" style="display:none">
-    <button id="tabBtnSv1" class="tab-btn tab-btn-purple" onclick="ShowSevTab1">Enter Your Tab 1 Here</button>
-    <button id="tabBtnSv2" class="tab-btn tab-btn-purple" onclick="ShowSevTab2">Enter Your Tab 2 Here</button>
-    <button id="tabBtnSv3" class="tab-btn tab-btn-purple" onclick="ShowSevTab3">Enter Your Tab 3 Here</button>
-    <button id="tabBtnSv4" class="tab-btn tab-btn-purple" onclick="ShowSevTab4">Enter Your Tab 4 Here</button>
-    <button id="tabBtnSv5" class="tab-btn tab-btn-purple" onclick="ShowSevTab5">Enter Your Tab 5 Here</button>
+    <button id="tabBtnSv1" class="tab-btn tab-btn-purple" onclick="ShowSevTab1">{{SEV1_NAME}}</button>
+    <button id="tabBtnSv2" class="tab-btn tab-btn-purple" onclick="ShowSevTab2">{{SEV2_NAME}}</button>
+    <button id="tabBtnSv3" class="tab-btn tab-btn-purple" onclick="ShowSevTab3">{{SEV3_NAME}}</button>
+    <button id="tabBtnSv4" class="tab-btn tab-btn-purple" onclick="ShowSevTab4">{{SEV4_NAME}}</button>
+    <button id="tabBtnSv5" class="tab-btn tab-btn-purple" onclick="ShowSevTab5">{{SEV5_NAME}}</button>
 </div>
 
 <!-- ================= TAB 1 (Category 1) ================= -->
 <div id="tab1">
     <div class="panel">
         <div class="panel-header red">
-            <h2>Enter Your Title Here</h2>
-            <p>Enter your description here.</p>
+            <h2>{{TAB1_PANEL_TITLE}}</h2>
+            <p>{{TAB1_PANEL_DESC}}</p>
         </div>
         <div class="panel-body">
             <div id="err1" class="error-box"></div>
@@ -1318,12 +1428,13 @@ End Sub
             </div>
 
             <button class="btn btn-red" onclick="ValidateAndSend1">Generate Email</button>
+            <button class="btn" style="background:#38435D;" onclick="GeneratePassDown">Pass Down Info</button>
             <div id="status1" class="status-msg"></div>
 
-            <div class="section-title">Agent Log</div>
+            <div class="section-title">Agent Log <span class="log-note" style="font-weight:400;">(today only, newest first)</span></div>
             <table class="log-table">
                 <thead>
-                    <tr><th>Log ID</th><th>Ticket Number</th><th>Agent Name</th><th>Agent Email</th></tr>
+                    <tr><th>Log ID</th><th>Ticket Number</th><th>Agent Name</th><th>Agent Email</th><th>Timestamp</th></tr>
                 </thead>
                 <tbody id="logBody"></tbody>
             </table>
@@ -1335,8 +1446,8 @@ End Sub
 <div id="tab2">
     <div class="panel">
         <div class="panel-header blue">
-            <h2>Enter Your Title Here</h2>
-            <p>Enter your description here.</p>
+            <h2>{{TAB2_PANEL_TITLE}}</h2>
+            <p>{{TAB2_PANEL_DESC}}</p>
         </div>
         <div class="panel-body">
             <div id="err2" class="error-box blue-theme"></div>
@@ -1388,8 +1499,8 @@ End Sub
 <div id="sevTab1" style="display:none">
     <div class="panel">
         <div class="panel-header purple">
-            <h2>Enter Your Title Here</h2>
-            <p>Enter your description here.</p>
+            <h2>{{SEV1_PANEL_TITLE}}</h2>
+            <p>{{SEV1_PANEL_DESC}}</p>
         </div>
         <div class="panel-body">
             <div id="svErr1" class="error-box purple-theme"></div>
@@ -1426,8 +1537,8 @@ End Sub
 <div id="sevTab2" style="display:none">
     <div class="panel">
         <div class="panel-header purple">
-            <h2>Enter Your Title Here</h2>
-            <p>Enter your description here.</p>
+            <h2>{{SEV2_PANEL_TITLE}}</h2>
+            <p>{{SEV2_PANEL_DESC}}</p>
         </div>
         <div class="panel-body">
             <div id="svErr2" class="error-box purple-theme"></div>
@@ -1464,8 +1575,8 @@ End Sub
 <div id="sevTab3" style="display:none">
     <div class="panel">
         <div class="panel-header purple">
-            <h2>Enter Your Title Here</h2>
-            <p>Enter your description here.</p>
+            <h2>{{SEV3_PANEL_TITLE}}</h2>
+            <p>{{SEV3_PANEL_DESC}}</p>
         </div>
         <div class="panel-body">
             <div id="svErr3" class="error-box purple-theme"></div>
@@ -1502,8 +1613,8 @@ End Sub
 <div id="sevTab4" style="display:none">
     <div class="panel">
         <div class="panel-header purple">
-            <h2>Enter Your Title Here</h2>
-            <p>Enter your description here.</p>
+            <h2>{{SEV4_PANEL_TITLE}}</h2>
+            <p>{{SEV4_PANEL_DESC}}</p>
         </div>
         <div class="panel-body">
             <div id="svErr4" class="error-box purple-theme"></div>
@@ -1540,8 +1651,8 @@ End Sub
 <div id="sevTab5" style="display:none">
     <div class="panel">
         <div class="panel-header purple">
-            <h2>Enter Your Title Here</h2>
-            <p>Enter your description here.</p>
+            <h2>{{SEV5_PANEL_TITLE}}</h2>
+            <p>{{SEV5_PANEL_DESC}}</p>
         </div>
         <div class="panel-body">
             <div id="svErr5" class="error-box purple-theme"></div>
@@ -1583,9 +1694,9 @@ End Sub
             <p>This tool helps you send common support emails quickly.</p>
         </div>
         <div class="panel-body info-box">
-            <h3>1. Enter Your Tab 1 Here</h3>
+            <h3>1. {{TAB1_NAME}}</h3>
             <ol>
-                <li>Click <b>Category 1</b> at the top, then <b>Enter Your Tab 1 Here</b>.</li>
+                <li>Click <b>Category 1</b> at the top, then <b>{{TAB1_NAME}}</b>.</li>
                 <li>Type the person's ID in <b>Enter ID</b>.</li>
                 <li>Type the ticket number in <b>Ticket Number</b>.</li>
                 <li>Pick the agent from the <b>Choose Agent</b> list.</li>
@@ -1593,9 +1704,9 @@ End Sub
                 <li>The email is added automatically to the <b>Agent Log</b> table below the form.</li>
             </ol>
 
-            <h3>2. Enter Your Tab 2 Here</h3>
+            <h3>2. {{TAB2_NAME}}</h3>
             <ol>
-                <li>Click <b>Category 1</b> at the top, then <b>Enter Your Tab 2 Here</b>.</li>
+                <li>Click <b>Category 1</b> at the top, then <b>{{TAB2_NAME}}</b>.</li>
                 <li>Fill in the ticket details.</li>
                 <li>To attach a file, choose it and click <b>Add Attachment</b>. Repeat for each additional file; attached files are listed below the buttons. Click <b>Clear All</b> to remove them.</li>
                 <li>Click <b>Send Email</b>. Outlook will open a draft addressed to the support team with any attachments included.</li>
@@ -1604,7 +1715,7 @@ End Sub
             <h3>3. Category 2</h3>
             <ol>
                 <li>Click <b>Category 2</b> at the top.</li>
-                <li>Pick the tab that matches the issue: Enter Your Tab 1 Here, Enter Your Tab 2 Here, Enter Your Tab 3 Here, Enter Your Tab 4 Here, or Enter Your Tab 5 Here.</li>
+                <li>Pick the tab that matches the issue: {{SEV1_NAME}}, {{SEV2_NAME}}, {{SEV3_NAME}}, {{SEV4_NAME}}, or {{SEV5_NAME}}.</li>
                 <li>Fill in the ticket number, error message, list of tickets, and user location.</li>
                 <li>If you have a log file, attach it. If not, you can paste the log text in the box instead.</li>
                 <li>Click <b>Generate Email</b>. Outlook will open a draft ready to review and send.</li>
@@ -1675,14 +1786,24 @@ End Sub
                 <li><code>Tab2ToEmails</code> / <code>Tab2CcEmails</code> -- top of the script.</li>
                 <li><code>SevTabName()</code> / <code>SevTabDesc()</code> / <code>SevTabEmail()</code> / <code>SevTabIntro()</code> -- top of the script, one entry per Category 2 tab (1-5).</li>
                 <li><code>DevNotesPassword</code> -- top of the script (see Security note below).</li>
-                <li>Every visible title, tab label, and description in this file is a placeholder ("Enter Your Title Here" / "Enter Your Tab N Here" / "Enter your description here.") -- replace them with real content before handing this out.</li>
+                <li><b>Every visible title, tab label, and description in this file is a placeholder using a unique <code>{{TOKEN}}</code> name (changed 2026-09-11)</b> -- e.g. <code>{{APP_TITLE}}</code>, <code>{{TAB1_NAME}}</code>, <code>{{SEV3_PANEL_DESC}}</code>. Before this, every one of these placeholders shared the exact same literal text ("Enter Your Title Here" / "Enter Your Tab N Here" / "Enter your description here.") across many unrelated spots -- a global Find & Replace on that text couldn't tell the app's main title apart from a severity tab's panel title apart from another severity tab's panel title, since they were all byte-identical. Each <code>{{TOKEN}}</code> is now unique to what it represents, and appears in EVERY place that value needs to show up consistently (e.g. <code>{{SEV1_NAME}}</code> appears in the nav button, the <code>SevTabName(1)</code> script config, and the How-To text) -- so a single Find & Replace per token updates it everywhere at once, correctly. Search the file for <code>{{</code> to find every remaining placeholder.</li>
             </ul>
 
             <h3>Log</h3>
             <ul>
                 <li>Tab 1's Agent Log is persisted to <code>EmailLog.csv</code> next to this .hta (LogID, TicketNumber, AgentName, AgentEmail, Timestamp) and reloaded into the table on startup via <code>InitLog</code>.</li>
                 <li><b>CSV fields are properly quoted (fixed 2026-09-11).</b> Ticket numbers/agent names are free-typed text and can contain a comma (e.g. a pasted "1,234") or a quote -- writing/reading them with a plain <code>&amp;</code>-join and <code>Split(line, ",")</code> silently shifted every column after the first comma, corrupting that row permanently. <code>CsvEscapeField()</code> (write) and <code>ParseCsvLine()</code> (read) now do minimal RFC-4180-style quoting -- a field is wrapped in quotes (with internal quotes doubled) only if it contains a comma, quote, or line break. Any old rows already written by the previous unquoted version are NOT retroactively fixed and may still parse wrong.</li>
-                <li><b>Startup only renders the last <code>MAX_LOG_ROWS_SHOWN</code> (200) rows (fixed 2026-09-11).</b> <code>InitLog</code> still reads the entire file every launch to compute the next LogID correctly, but previously also called <code>AddLogRow</code> (a DOM <code>insertRow</code>) for every historical line -- with a file that's been growing for months, that made startup progressively slower forever. The full history still lives in <code>EmailLog.csv</code> itself (open it in Excel to see everything); only the on-screen table is capped. Raise <code>MAX_LOG_ROWS_SHOWN</code> if the team wants more history visible at a cost to startup time.</li>
+                <li><b>Startup only renders today's rows, safety-capped at <code>MAX_LOG_ROWS_SHOWN</code> (200) (changed 2026-09-11).</b> <code>InitLog</code> still reads the entire file every launch to compute the next LogID correctly (across all days, so numbering never resets), but only calls <code>AddLogRow</code> (a DOM <code>insertRow</code>) for rows whose Timestamp field is today's date (<code>DateValue(parts(4)) = Date</code>) -- yesterday's and older entries would otherwise just be clutter for "who's been assigned what so far today." <code>MAX_LOG_ROWS_SHOWN</code> is now just a safety cap on top of that (in case one day somehow has 200+ urgents), not the primary limit. The full history for every day still lives in <code>EmailLog.csv</code> itself (open it in Excel to see everything); only the on-screen table is filtered.</li>
+                <li><b>Table sorts newest-first (changed 2026-09-11).</b> <code>AddLogRow</code> now does <code>tbody.insertRow(0)</code> instead of <code>insertRow(-1)</code>, so the most recently assigned ticket is always the top row -- both for today's history replayed at startup (each older row gets pushed down as a newer one is inserted above it, since the replay itself is still oldest-to-newest) and for a brand-new entry logged live during the session.</li>
+                <li>The table now has a <b>Timestamp</b> column (5th cell) -- <code>AddLogRow</code> takes a 5th <code>ts</code> parameter and <code>LogEmail</code>/<code>InitLog</code> both pass it through from the CSV's existing Timestamp field (it was already being written to disk, just never rendered on screen before).</li>
+            </ul>
+
+            <h3>Pass Down Info (added 2026-09-11)</h3>
+            <ul>
+                <li>The <b>Pass Down Info</b> button (next to Generate Email, Tab 1) calls <code>GeneratePassDown</code>, which builds a shift-handoff summary and copies it to the clipboard via <code>window.clipboardData.setData "Text", txt</code> -- the native IE/mshta clipboard API (no ActiveX prompt, works directly in the Local Machine zone this app runs in). Paste it into Teams, email, or anywhere else.</li>
+                <li>It first shows an <code>InputBox</code> for an optional free-text note (Cancel or leaving it blank is fine -- the note section is just skipped).</li>
+                <li>It then reads the first <code>Min(5, actual row count)</code> rows directly out of <code>tbody#logBody</code> -- NOT by re-reading <code>EmailLog.csv</code> -- since the table is already the live, today-only, newest-first view on screen. Its first 5 rows are, by construction, "the last 5 assigned urgent tickets," because <code>AddLogRow</code> inserts every new row at the top (see Log section above). Each line includes the ticket number, agent name, agent email, and timestamp (cells 1-4; cell 0/LogID is left out of the copied text as internal bookkeeping, not something another agent needs).</li>
+                <li>If the table is empty (no urgents assigned yet today), the copied text says so instead of an empty list -- it still copies something reasonable rather than silently producing a broken/blank pass-down message.</li>
             </ul>
 
             <h3>Security note</h3>
@@ -1695,7 +1816,7 @@ End Sub
     </div>
 </div>
 
-<div id="appFooter">Proprietary &mdash; Developed by Enter Your Name/Team Here</div>
+<div id="appFooter">Proprietary &mdash; Developed by {{APP_TEAM_NAME}}</div>
 
 </body>
 </html>
