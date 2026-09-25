@@ -255,6 +255,13 @@
 ' Configuration -- edit these to match your environment
 ' ============================================================
 
+' ---- Tab 1 CC address -----------------------------------------------
+' Every Tab 1 "Generate Email" CCs this address in addition to the
+' requester (Enter ID) and the selected agent, which stay on the "To"
+' line. Leave "" to send no CC. Semicolon-separate multiple addresses.
+Dim Tab1CcEmail
+Tab1CcEmail = "cc@example.com" ' placeholder CC recipient for Tab 1 emails
+
 ' ---- Tab 2 email addresses -----------------------------------------
 ' Who gets the Tab 2 email (Category 1). Separate each address with a
 ' semicolon ( ; ) -- no spaces needed. These go out on every Tab 2
@@ -264,6 +271,16 @@
 Dim Tab2ToEmails, Tab2CcEmails
 Tab2ToEmails = "recipient1@example.com;recipient2@example.com;recipient3@example.com;recipient4@example.com;recipient5@example.com" ' placeholder To recipients for Tab 2 emails
 Tab2CcEmails = "cc1@example.com;cc2@example.com;cc3@example.com;cc4@example.com;cc5@example.com" ' placeholder CC recipients for Tab 2 emails
+
+' NewTabFunctionality -- START: Tab 3 templates folder config
+' ---- Tab 3 email templates folder ----------------------------------
+' Tab 3 (Category 1) lists every Outlook template (.oft) in this folder
+' in its dropdown. The list is re-read every time Tab 3 is opened (or
+' "Refresh List" is clicked), so just drop new .oft files in the folder
+' -- no need to edit this file. Picking one opens it in Outlook.
+Dim TemplatesFolder
+TemplatesFolder = "A:\Documents_DataDrive\WorkIdeas\Templates"
+' NewTabFunctionality -- END: Tab 3 templates folder config
 
 ' ---- Category 2 (Severity Templates): names, descriptions, and who to email ----
 ' One line per template (Category 2, slots 1-5). Each line sets three
@@ -792,6 +809,7 @@ Sub HideAllPanels
     On Error Resume Next
     document.getElementById("tab1").style.display = "none"
     document.getElementById("tab2").style.display = "none"
+    document.getElementById("tab3").style.display = "none" ' NewTabFunctionality -- hide Tab 3 panel too
     Dim i
     For i = 1 To 5
         document.getElementById("sevTab" & i).style.display = "none"
@@ -826,6 +844,7 @@ Sub ShowTab1
     ShowPanel "tab1"
     SetTabButtonState document.getElementById("tabBtn1"), True, "#E61231"
     SetTabButtonState document.getElementById("tabBtn2"), False, "#1F2A44"
+    SetTabButtonState document.getElementById("tabBtn3"), False, "#000000" ' NewTabFunctionality -- Tab 3 button inactive
 End Sub
 
 Sub ShowTab2
@@ -833,7 +852,20 @@ Sub ShowTab2
     ShowPanel "tab2"
     SetTabButtonState document.getElementById("tabBtn1"), False, "#E61231"
     SetTabButtonState document.getElementById("tabBtn2"), True, "#1F2A44"
+    SetTabButtonState document.getElementById("tabBtn3"), False, "#000000" ' NewTabFunctionality -- Tab 3 button inactive
 End Sub
+
+' NewTabFunctionality -- START: ShowTab3 (shows the Email Templates panel,
+' highlights its button, and reloads the template dropdown from the folder)
+Sub ShowTab3
+    On Error Resume Next
+    ShowPanel "tab3"
+    SetTabButtonState document.getElementById("tabBtn1"), False, "#E61231"
+    SetTabButtonState document.getElementById("tabBtn2"), False, "#1F2A44"
+    SetTabButtonState document.getElementById("tabBtn3"), True, "#000000"
+    LoadTemplateList
+End Sub
+' NewTabFunctionality -- END: ShowTab3
 
 Sub ShowSevTab(idx)
     On Error Resume Next
@@ -929,7 +961,7 @@ Sub ValidateAndSend1
     gTab1PendingTicket = ctrlTicket.value
     gTab1PendingAgentName = agentName
     gTab1PendingAgentEmail = agentEmail
-    BeginSend "tab1", "status1", recipientEmail, "", subj, body, "", Array()
+    BeginSend "tab1", "status1", recipientEmail, Tab1CcEmail, subj, body, "", Array()
 End Sub
 
 ' ============================================================
@@ -1345,6 +1377,129 @@ Sub UpdateTicketCount4 : UpdateTicketCount 4 : End Sub
 Sub UpdateTicketCount5 : UpdateTicketCount 5 : End Sub
 
 ' ============================================================
+' NewTabFunctionality -- START: TAB 3 (Category 1) -- Email Templates
+' ============================================================
+' The dropdown is rebuilt from the .oft files in TemplatesFolder every
+' time Tab 3 is shown, so adding/removing/renaming a template in that
+' folder shows up without touching this file. Selecting a template opens
+' it in Outlook via CreateItemFromTemplate + Display (a draft, not sent).
+Dim gPendingTemplatePath ' NewTabFunctionality -- path of the template being opened (read by FinishOpenTemplate)
+
+' NewTabFunctionality -- LoadTemplateList: fills the dropdown with every
+' .oft file found in TemplatesFolder (name shown, full path as the value).
+Sub LoadTemplateList
+    On Error Resume Next
+    Dim sel, folder, f, opt, n
+    Set sel = document.getElementById("ctrlTemplate")
+
+    ' Keep the "-- Select Template --" placeholder (index 0), drop the rest.
+    Do While sel.options.length > 1
+        sel.remove 1
+    Loop
+    sel.selectedIndex = 0
+
+    document.getElementById("tab3Folder").innerText = TemplatesFolder
+    If Not gFso.FolderExists(TemplatesFolder) Then
+        document.getElementById("tab3Count").innerText = "Folder not found"
+        Exit Sub
+    End If
+
+    n = 0
+    Set folder = gFso.GetFolder(TemplatesFolder)
+    For Each f In folder.Files
+        If LCase(gFso.GetExtensionName(f.Name)) = "oft" Then
+            Set opt = document.createElement("OPTION")
+            opt.text = gFso.GetBaseName(f.Name)
+            opt.value = f.Path
+            sel.options.add opt
+            n = n + 1
+        End If
+    Next
+
+    If n = 1 Then
+        document.getElementById("tab3Count").innerText = "1 template"
+    Else
+        document.getElementById("tab3Count").innerText = n & " templates"
+    End If
+End Sub
+
+' NewTabFunctionality -- OpenTemplatesFolder: opens TemplatesFolder in
+' Windows Explorer so new .oft files can be dropped in.
+Sub OpenTemplatesFolder
+    On Error Resume Next
+    If Not gFso.FolderExists(TemplatesFolder) Then
+        MsgBox "Templates folder not found: " & TemplatesFolder
+        Exit Sub
+    End If
+    CreateObject("WScript.Shell").Run "explorer.exe """ & TemplatesFolder & """"
+End Sub
+
+' NewTabFunctionality -- OpenSelectedTemplate: runs when a template is
+' picked in the dropdown (onchange).
+' Same "please wait" deferral as BeginSend/FinishSend -- launching Outlook
+' can freeze the UI for several seconds, so paint the status first.
+Sub OpenSelectedTemplate
+    On Error Resume Next
+    Dim sel
+    Set sel = document.getElementById("ctrlTemplate")
+    If sel.value = "" Then Exit Sub
+    If gSendInProgress Then Exit Sub
+    gSendInProgress = True
+
+    gPendingTemplatePath = sel.value
+    document.body.style.cursor = "wait"
+    document.getElementById("status3").style.color = "#666"
+    document.getElementById("status3").innerText = "Opening template in Outlook -- please wait..."
+
+    window.setTimeout "FinishOpenTemplate", 30
+End Sub
+
+' NewTabFunctionality -- FinishOpenTemplate: does the actual Outlook work
+' (CreateItemFromTemplate + Display), then updates the status message.
+Sub FinishOpenTemplate
+    On Error Resume Next
+    Dim objOutlook, objMail, ok
+    ok = False
+
+    If Not gFso.FileExists(gPendingTemplatePath) Then
+        MsgBox "Template not found (it may have been moved or deleted):" & vbCrLf & gPendingTemplatePath
+        LoadTemplateList
+    Else
+        Err.Clear
+        Set objOutlook = CreateObject("Outlook.Application")
+        If Err.Number <> 0 Then
+            MsgBox "Could not connect to Outlook. Is it installed?"
+        Else
+            Err.Clear
+            Set objMail = objOutlook.CreateItemFromTemplate(gPendingTemplatePath)
+            If Err.Number <> 0 Then
+                MsgBox "Could not open template:" & vbCrLf & gPendingTemplatePath & vbCrLf & vbCrLf & Err.Description
+            Else
+                objMail.Display
+                ok = True
+            End If
+        End If
+        Set objMail = Nothing
+        Set objOutlook = Nothing
+    End If
+
+    gSendInProgress = False
+    document.body.style.cursor = "default"
+    document.getElementById("status3").style.color = "#2e7d32"
+    If ok Then
+        document.getElementById("status3").innerText = "Template opened: " & gFso.GetBaseName(gPendingTemplatePath)
+    Else
+        document.getElementById("status3").innerText = ""
+    End If
+
+    ' Reset so picking the same template again still fires onchange.
+    document.getElementById("ctrlTemplate").selectedIndex = 0
+End Sub
+' ============================================================
+' NewTabFunctionality -- END: TAB 3 (Category 1) -- Email Templates
+' ============================================================
+
+' ============================================================
 ' How To / Developer Notes -- shown as regular in-page panels
 ' (NOT a fixed-position overlay: position:fixed does not render
 ' reliably in the old IE engine mshta uses).
@@ -1404,6 +1559,8 @@ End Sub
 <div id="subNavGeneral">
     <button id="tabBtn1" class="tab-btn tab-btn-red" onclick="ShowTab1">{{TAB1_NAME}}</button>
     <button id="tabBtn2" class="tab-btn tab-btn-blue" onclick="ShowTab2">{{TAB2_NAME}}</button>
+    <!-- NewTabFunctionality -- Tab 3 button -->
+    <button id="tabBtn3" class="tab-btn tab-btn-purple" onclick="ShowTab3">Email Templates</button>
 </div>
 
 <div id="subNavSeverity" style="display:none">
@@ -1459,6 +1616,7 @@ End Sub
                     <option value="agent7@example.com" data-name="Agent 7">Agent 7</option>
                     <option value="agent8@example.com" data-name="Agent 8">Agent 8</option>
                     <option value="agent9@example.com" data-name="Agent 9">Agent 9</option>
+                    <option value="manny.mendez@example.com" data-name="Manny M&#233;ndez">Manny M&#233;ndez</option>
                 </select>
             </div>
 
@@ -1527,6 +1685,33 @@ End Sub
         </div>
     </div>
 </div>
+
+<!-- ================= NewTabFunctionality -- START: TAB 3 (Category 1) -- Email Templates ================= -->
+<div id="tab3" style="display:none">
+    <div class="panel">
+        <div class="panel-header purple">
+            <h2>Email Templates</h2>
+            <p>Pick a saved Outlook template (.oft) to open it as a new draft.</p>
+        </div>
+        <div class="panel-body">
+            <div class="field">
+                <label>Choose Template:</label>
+                <!-- Options are filled in by LoadTemplateList from TemplatesFolder (top of the script). -->
+                <select id="ctrlTemplate" onchange="OpenSelectedTemplate">
+                    <option value="">-- Select Template --</option>
+                </select>
+                <div id="tab3Count" class="ticket-count">0 templates</div>
+            </div>
+            <div class="log-note">Templates folder: <span id="tab3Folder"></span></div>
+            <div style="margin-top:10px;">
+                <button type="button" class="btn btn-purple" onclick="LoadTemplateList">Refresh List</button>
+                <button type="button" class="btn" style="background:#38435D;" onclick="OpenTemplatesFolder">Open Templates Folder</button>
+            </div>
+            <div id="status3" class="status-msg"></div>
+        </div>
+    </div>
+</div>
+<!-- ================= NewTabFunctionality -- END: TAB 3 ================= -->
 
 <!-- ================= CATEGORY 2 TABS (1-5) ================= -->
 <!-- Titles/descriptions below should be kept in sync with SevTabName()/SevTabDesc() in the script -->
@@ -1747,7 +1932,16 @@ End Sub
                 <li>Click <b>Send Email</b>. Outlook will open a draft addressed to the support team with any attachments included.</li>
             </ol>
 
-            <h3>3. Category 2</h3>
+            <!-- NewTabFunctionality -- START: How To section for Tab 3 -->
+            <h3>3. Email Templates</h3>
+            <ol>
+                <li>Click <b>Category 1</b> at the top, then <b>Email Templates</b>.</li>
+                <li>Pick a template from the <b>Choose Template</b> list. Outlook opens it as a new draft. Check it, then send it.</li>
+                <li>To add a template, save it from Outlook as an <b>Outlook Template (*.oft)</b> into the templates folder (click <b>Open Templates Folder</b> to go there), then click <b>Refresh List</b>.</li>
+            </ol>
+            <!-- NewTabFunctionality -- END: How To section for Tab 3 -->
+
+            <h3>4. Category 2</h3>
             <ol>
                 <li>Click <b>Category 2</b> at the top.</li>
                 <li>Pick the tab that matches the issue: {{SEV1_NAME}}, {{SEV2_NAME}}, {{SEV3_NAME}}, {{SEV4_NAME}}, or {{SEV5_NAME}}.</li>
@@ -1819,6 +2013,8 @@ End Sub
             <ul>
                 <li>Agent list (9 agents) -- Tab 1 form, the &lt;select id="ctrlAgent"&gt; markup.</li>
                 <li><code>Tab2ToEmails</code> / <code>Tab2CcEmails</code> -- top of the script.</li>
+                <!-- NewTabFunctionality -- Developer Notes entry for Tab 3 -->
+                <li><code>TemplatesFolder</code> -- top of the script. Tab 3 (Email Templates) lists every <code>.oft</code> file in this folder. <code>LoadTemplateList</code> rebuilds the dropdown each time Tab 3 is shown or Refresh List is clicked. When a template is picked, <code>OpenSelectedTemplate</code>/<code>FinishOpenTemplate</code> opens it using <code>CreateItemFromTemplate</code> + <code>.Display</code>, with the same wait-message delay and <code>gSendInProgress</code> guard as <code>BeginSend</code>. The signature is NOT added, because the template's own body is used as-is.</li>
                 <li><code>SevTabName()</code> / <code>SevTabDesc()</code> / <code>SevTabEmail()</code> / <code>SevTabIntro()</code> -- top of the script, one entry per Category 2 tab (1-5).</li>
                 <li><code>DevNotesPassword</code> -- top of the script (see Security note below).</li>
                 <li><b>Every visible title, tab label, and description in this file is a placeholder using a unique <code>{{TOKEN}}</code> name (changed 2026-09-11)</b> -- e.g. <code>{{APP_TITLE}}</code>, <code>{{TAB1_NAME}}</code>, <code>{{SEV3_PANEL_DESC}}</code>. Before this, every one of these placeholders shared the exact same literal text ("Enter Your Title Here" / "Enter Your Tab N Here" / "Enter your description here.") across many unrelated spots -- a global Find & Replace on that text couldn't tell the app's main title apart from a severity tab's panel title apart from another severity tab's panel title, since they were all byte-identical. Each <code>{{TOKEN}}</code> is now unique to what it represents, and appears in EVERY place that value needs to show up consistently (e.g. <code>{{SEV1_NAME}}</code> appears in the nav button, the <code>SevTabName(1)</code> script config, and the How-To text) -- so a single Find & Replace per token updates it everywhere at once, correctly. Search the file for <code>{{</code> to find every remaining placeholder.</li>
