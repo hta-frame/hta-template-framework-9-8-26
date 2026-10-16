@@ -278,9 +278,22 @@ Tab2CcEmails = "cc1@example.com;cc2@example.com;cc3@example.com;cc4@example.com;
 ' in its dropdown. The list is re-read every time Tab 3 is opened (or
 ' "Refresh List" is clicked), so just drop new .oft files in the folder
 ' -- no need to edit this file. Picking one opens it in Outlook.
+' %APPDATA% expands to the current user's AppData\Roaming folder
+' (e.g. C:\Users\<name>\AppData\Roaming), so this works on any PC.
 Dim TemplatesFolder
-TemplatesFolder = "A:\Documents_DataDrive\WorkIdeas\Templates"
+TemplatesFolder = CreateObject("WScript.Shell").ExpandEnvironmentStrings("%APPDATA%\Microsoft\Templates")
 ' NewTabFunctionality -- END: Tab 3 templates folder config
+
+' NewTabFunctionality -- START: Tab 4 template file config
+' ---- Tab 4 one-click template ---------------------------------------
+' The {{TAB4_NAME}} button (next to "Email Templates") opens this ONE
+' Outlook template (.oft) directly -- no panel, no dropdown.
+' >>> ADD YOUR .oft HERE: put the file in the "Templates" folder next to
+'     this .hta and set its file name below. A relative path is resolved
+'     from this .hta's folder; a full path (C:\... or \\server\...) also works.
+Dim Tab4TemplateFile
+Tab4TemplateFile = "Templates\{{TAB4_TEMPLATE_FILE}}.oft" ' <<< CHANGE ME: your .oft file name
+' NewTabFunctionality -- END: Tab 4 template file config
 
 ' ---- Category 2 (Severity Templates): names, descriptions, and who to email ----
 ' One line per template (Category 2, slots 1-5). Each line sets three
@@ -1500,6 +1513,70 @@ End Sub
 ' ============================================================
 
 ' ============================================================
+' NewTabFunctionality -- START: TAB 4 button (Category 1) -- open one .oft
+' ============================================================
+' Clicking the {{TAB4_NAME}} button opens the template set in
+' Tab4TemplateFile (see the "Tab 4 template file config" block near the
+' top of the script) as an Outlook draft. It does NOT switch panels, so
+' the current tab stays on screen.
+
+' NewTabFunctionality -- Tab4TemplatePath: turns Tab4TemplateFile into a
+' full path (relative paths are resolved from this .hta's folder).
+Function Tab4TemplatePath
+    If InStr(Tab4TemplateFile, ":") > 0 Or Left(Tab4TemplateFile, 2) = "\\" Then
+        Tab4TemplatePath = Tab4TemplateFile
+    Else
+        Tab4TemplatePath = ScriptFolder() & Tab4TemplateFile
+    End If
+End Function
+
+' NewTabFunctionality -- OpenTab4Template: runs on button click.
+' Same "please wait" deferral as OpenSelectedTemplate -- launching Outlook
+' can freeze the UI for several seconds, so show the wait cursor first.
+Sub OpenTab4Template
+    On Error Resume Next
+    If gSendInProgress Then Exit Sub
+    gSendInProgress = True
+    document.body.style.cursor = "wait"
+    window.setTimeout "FinishOpenTab4Template", 30
+End Sub
+
+' NewTabFunctionality -- FinishOpenTab4Template: does the actual Outlook
+' work (CreateItemFromTemplate + Display -- a draft, not sent).
+Sub FinishOpenTab4Template
+    On Error Resume Next
+    Dim path, objOutlook, objMail
+    path = Tab4TemplatePath()
+
+    If Not gFso.FileExists(path) Then
+        MsgBox "Template not found:" & vbCrLf & path & vbCrLf & vbCrLf & _
+               "Set Tab4TemplateFile at the top of the script to your .oft file."
+    Else
+        Err.Clear
+        Set objOutlook = CreateObject("Outlook.Application")
+        If Err.Number <> 0 Then
+            MsgBox "Could not connect to Outlook. Is it installed?"
+        Else
+            Err.Clear
+            Set objMail = objOutlook.CreateItemFromTemplate(path)
+            If Err.Number <> 0 Then
+                MsgBox "Could not open template:" & vbCrLf & path & vbCrLf & vbCrLf & Err.Description
+            Else
+                objMail.Display
+            End If
+        End If
+        Set objMail = Nothing
+        Set objOutlook = Nothing
+    End If
+
+    gSendInProgress = False
+    document.body.style.cursor = "default"
+End Sub
+' ============================================================
+' NewTabFunctionality -- END: TAB 4 button (Category 1) -- open one .oft
+' ============================================================
+
+' ============================================================
 ' How To / Developer Notes -- shown as regular in-page panels
 ' (NOT a fixed-position overlay: position:fixed does not render
 ' reliably in the old IE engine mshta uses).
@@ -1561,6 +1638,10 @@ End Sub
     <button id="tabBtn2" class="tab-btn tab-btn-blue" onclick="ShowTab2">{{TAB2_NAME}}</button>
     <!-- NewTabFunctionality -- Tab 3 button -->
     <button id="tabBtn3" class="tab-btn tab-btn-purple" onclick="ShowTab3">Email Templates</button>
+    <!-- NewTabFunctionality -- Tab 4 button: opens ONE .oft directly (no panel).
+         Label = {{TAB4_NAME}}; the .oft path is set in Tab4TemplateFile (script config, top of file);
+         the click handler is OpenTab4Template (search "TAB 4 button"). -->
+    <button id="tabBtn4" class="tab-btn tab-btn-purple" onclick="OpenTab4Template" title="Opens the {{TAB4_NAME}} Outlook template">{{TAB4_NAME}}</button>
 </div>
 
 <div id="subNavSeverity" style="display:none">
