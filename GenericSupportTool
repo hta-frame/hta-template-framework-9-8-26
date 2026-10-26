@@ -40,6 +40,12 @@
         font-size: 20px;
         font-weight: 600;
     }
+    /* "Current version X.XX" line under the title */
+    #appVersionLine {
+        margin-top: 4px;
+        font-size: 12px;
+        color: #C8CDD8;
+    }
     .header-btn-group { display: flex; gap: 8px; align-items: center; }
     .icon-btn {
         width: 30px;
@@ -252,6 +258,47 @@
 <script language="VBScript">
 
 ' ============================================================
+' Version & automatic updates
+' ============================================================
+' THE SHARED FOLDER HOLDS TWO FILES
+'   version.txt                 -> one line: the current version, e.g. 1.01
+'   EngagementTool_Code.txt     -> the COMPLETE code of the .hta
+'
+' HOW UPDATES WORK
+'   Every time this tool opens, it reads version.txt from the share.
+'   If that number is different from this copy's version (shown at the
+'   top of the tool as "Current version X.XX"), it replaces ALL of this
+'   .hta's code with EngagementTool_Code.txt and reopens itself.
+'   If the share can't be reached (offline, VPN down, no access) the
+'   tool just opens as normal on its current version.
+'
+' TO RELEASE AN UPDATE
+'   1. Paste the complete new code into EngagementTool_Code.txt and save.
+'   2. Change the number in version.txt (e.g. 1.00 -> 1.01) and save.
+'   That's it. Every copy, in any folder, updates the next time it opens.
+'   (You don't need to edit the version below by hand -- the updater
+'   writes the number from version.txt into the new copy for you.)
+'   Always save the code file BEFORE changing version.txt, so nobody
+'   picks up a half-saved file.
+'
+' WHAT AN UPDATE DOES NOT TOUCH
+'   Only this .hta file is replaced. EmailLog.csv and the Templates
+'   folder next to it are left alone, so each folder keeps its own log
+'   history. Settings (email addresses etc.) are part of the code, so
+'   they come from the code file like everything else.
+
+' This copy's version. Filled in automatically by the updater.
+Const APP_VERSION = "1.01"
+
+' The shared folder that holds version.txt and the code file.
+' Keep the "\" at the end. Set it to "" to turn automatic updates off.
+Const UpdateShareFolder = "\\YOUR-SERVER\YOUR-SHARE\EngagementTool\" ' <<< CHANGE ME: your share path
+
+' The two file names inside UpdateShareFolder.
+Const UpdateVersionFile = "version.txt"
+Const UpdateCodeFile = "EngagementTool_Code.txt"
+
+' ============================================================
 ' Configuration -- edit these to match your environment
 ' ============================================================
 
@@ -338,6 +385,139 @@ gLastPanelID = "tab1"
 ' full history for every day still lives in EmailLog.csv (open it in Excel
 ' to see everything); only the on-screen table is limited.
 Const MAX_LOG_ROWS_SHOWN = 200
+
+' ============================================================
+' START: File location helpers
+' ============================================================
+' AppFilePath: the full path of this running .hta, e.g.
+' "C:\Tools\Generic_Engagement_Tool.hta". It's read from the HTA's own
+' command line, which (unlike document.location) handles spaces and
+' \\server paths correctly. document.location is only a fallback.
+Function AppFilePath
+    On Error Resume Next
+    Dim cmd, pos, p
+    cmd = GenericSupportToolHTA.commandLine
+    pos = InStr(LCase(cmd), ".hta")
+    If pos > 0 Then
+        p = Trim(Left(cmd, pos + 3))
+        If Left(p, 1) = """" Then p = Mid(p, 2)
+    Else
+        ' Fallback: build the path from the page address instead.
+        p = unescape(Replace(document.location.pathname, "/", "\"))
+        If Left(p, 1) = "\" And Mid(p, 3, 1) = ":" Then p = Mid(p, 2)
+    End If
+    AppFilePath = p
+End Function
+' ============================================================
+' END: File location helpers
+' ============================================================
+
+' ============================================================
+' START: Automatic update check
+' ============================================================
+' ReadShareVersion: reads the version number from version.txt on the
+' share (first line only, spaces trimmed). Returns "" if the file can't
+' be read -- for example when the share is offline.
+Function ReadShareVersion(versionPath)
+    On Error Resume Next
+    ReadShareVersion = ""
+    If Not gFso.FileExists(versionPath) Then Exit Function
+    ReadShareVersion = Trim(Replace(gFso.OpenTextFile(versionPath, 1).ReadLine, vbTab, ""))
+    If Err.Number <> 0 Then ReadShareVersion = ""
+End Function
+
+' IsCompleteCode: a safety check on the code file before it's used.
+' If the file is empty, half-pasted, or the wrong file, the update is
+' skipped and the tool keeps running its current version. It must have
+' the HTA header at the start, the version line, and </html> at the end.
+Function IsCompleteCode(code)
+    Dim c
+    c = LCase(code)
+    IsCompleteCode = (InStr(c, "<hta:application") > 0) And _
+                     (InStr(c, "const app_version = """) > 0) And _
+                     (InStr(c, "</html>") > 0)
+End Function
+
+' StampVersion: writes the number from version.txt into the new code's
+' APP_VERSION line. That way you only ever change the number in ONE
+' place (version.txt), and the copy that gets installed always shows
+' the right "Current version" -- so it won't try to update again.
+Function StampVersion(code, ver)
+    Dim re
+    Set re = New RegExp
+    re.Pattern = "Const APP_VERSION = ""[^""]*"""
+    re.Global = False ' only the first match -- the real setting at the top
+    StampVersion = re.Replace(code, "Const APP_VERSION = """ & ver & """")
+End Function
+
+' CheckForUpdate: runs first thing at startup (see Window_OnLoad).
+' Returns True if the new code was installed. In that case this window
+' is closing and the updated tool is opening.
+' Any problem along the way (share offline, no permission, bad code
+' file) quietly leaves the current version running. Nothing is lost.
+Function CheckForUpdate
+    CheckForUpdate = False
+    If UpdateShareFolder = "" Then Exit Function ' updates turned off
+
+    On Error Resume Next
+    Dim versionPath, codePath, myPath, tempPath, shareVer, newCode, ts, sh
+    versionPath = UpdateShareFolder & UpdateVersionFile
+    codePath = UpdateShareFolder & UpdateCodeFile
+    myPath = AppFilePath()
+    If myPath = "" Then Exit Function
+
+    ' Step 1: what version does version.txt say?
+    shareVer = ReadShareVersion(versionPath)
+    If shareVer = "" Then Exit Function              ' share offline / no version.txt
+    If InStr(shareVer, """") > 0 Then Exit Function   ' a " would break the version line
+    If shareVer = APP_VERSION Then Exit Function     ' same version -- nothing to do
+    ' (Any DIFFERENT number counts, so you can also roll back to an
+    ' older version by putting the old code and number back.)
+
+    ' Step 2: read the complete new code from the share.
+    If Not gFso.FileExists(codePath) Then Exit Function
+    newCode = gFso.OpenTextFile(codePath, 1).ReadAll
+    If Err.Number <> 0 Then Exit Function
+    If Not IsCompleteCode(newCode) Then Exit Function ' empty / half-pasted / wrong file
+
+    ' Step 3: write the version.txt number into the new code.
+    newCode = StampVersion(newCode, shareVer)
+
+    ' Step 4: save the new code next to this file under a temporary
+    ' name first. If anything fails here, only the temp file is affected
+    ' and the working copy is untouched.
+    tempPath = myPath & ".updating"
+    Set ts = gFso.CreateTextFile(tempPath, True)
+    ts.Write newCode
+    ts.Close
+    If Err.Number <> 0 Then gFso.DeleteFile tempPath, True : Exit Function
+
+    ' Step 5: replace this .hta with the new code.
+    gFso.CopyFile tempPath, myPath, True
+    If Err.Number <> 0 Then gFso.DeleteFile tempPath, True : Exit Function
+    gFso.DeleteFile tempPath, True
+
+    ' Step 6: reopen on the new version, then close this window.
+    ' SINGLEINSTANCE="yes" would block the new window while this one is
+    ' still open, so the relaunch waits about 1 second first (the ping is
+    ' just a delay). The 0 keeps the command window hidden.
+    Set sh = CreateObject("WScript.Shell")
+    sh.Run "cmd /c ping -n 2 127.0.0.1 >nul & start """" mshta.exe """ & myPath & """", 0, False
+    CheckForUpdate = True
+    self.close
+End Function
+
+' ShowAppVersion: shows "Current version X.XX" under the title, and the
+' version + share folder in the Developer Notes.
+Sub ShowAppVersion
+    On Error Resume Next
+    document.getElementById("appVersion").innerText = APP_VERSION
+    document.getElementById("devNotesVersion").innerText = APP_VERSION
+    document.getElementById("devNotesShare").innerText = UpdateShareFolder
+End Sub
+' ============================================================
+' END: Automatic update check
+' ============================================================
 
 ' ============================================================
 ' START: CsvEscapeField / ParseCsvLine -- proper CSV quoting.
@@ -1612,6 +1792,11 @@ Sub CloseDevNotes
 End Sub
 
 Sub Window_OnLoad
+    ' Check the share for a newer version first. If one was just
+    ' installed, this window is closing and the new one is opening,
+    ' so stop here.
+    If CheckForUpdate() Then Exit Sub
+    ShowAppVersion
     InitLog
     ShowCategoryGeneral
 End Sub
@@ -1622,6 +1807,8 @@ End Sub
 
 <div id="appHeader">
     <h1>{{APP_TITLE}}</h1>
+    <!-- Filled in by ShowAppVersion at startup -->
+    <div id="appVersionLine">Current version <span id="appVersion"></span></div>
 </div>
 
 <div id="categoryNav">
@@ -2050,6 +2237,18 @@ End Sub
             <ul>
                 <li>This is a single .hta file (HTML Application), run via <code>mshta.exe</code>. It is NOT a normal web page and will not run in Chrome/Edge.</li>
                 <li>All logic is VBScript inside the one &lt;script language="VBScript"&gt; block.</li>
+            </ul>
+
+            <h3>Version &amp; Updates (added 2026-10-26)</h3>
+            <ul>
+                <li>This copy is version <b><span id="devNotesVersion"></span></b>. Update folder: <code><span id="devNotesShare"></span></code></li>
+                <li><b>The update folder holds two files:</b> <code>version.txt</code> (one line, the version number, e.g. 1.01) and <code>EngagementTool_Code.txt</code> (the complete .hta code).</li>
+                <li><b>Releasing an update:</b> (1) paste the complete new code into <code>EngagementTool_Code.txt</code> and save, then (2) change the number in <code>version.txt</code>. Every copy updates the next time it opens. Always save the code first and change the number last.</li>
+                <li><b>How it works:</b> <code>Window_OnLoad</code> calls <code>CheckForUpdate</code> first. If <code>version.txt</code> has a different number than this copy's <code>APP_VERSION</code>, it reads the code file, checks it looks complete (<code>IsCompleteCode</code>: HTA header, version line and closing html tag), writes the version.txt number into the code's version line (<code>StampVersion</code>, so you never edit the number inside the code by hand), saves it to <code>&lt;this file&gt;.updating</code>, copies that over this file, then reopens with <code>mshta</code> after a 1-second delay (needed because <code>SINGLEINSTANCE="yes"</code> would block the new window while the old one is still open) and closes.</li>
+                <li><b>Any different number counts</b>, not just a higher one, so you can roll back by putting the old code back and changing the number again.</li>
+                <li><b>Failure is safe:</b> share offline, no permission, or an empty/half-pasted code file all leave the current version running. Nothing is half-replaced. If an update doesn't seem to happen, check that the code file is complete.</li>
+                <li>Updates replace only the .hta, so <code>EmailLog.csv</code> and <code>Templates\</code> are never touched. Settings like email addresses are part of the code, so they come from the code file like everything else.</li>
+                <li>Set <code>UpdateShareFolder = ""</code> to turn updates off completely.</li>
             </ul>
 
             <h3>Outlook / Signature</h3>
