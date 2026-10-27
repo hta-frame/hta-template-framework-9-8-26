@@ -286,6 +286,8 @@
 '   folder next to it are left alone, so each folder keeps its own log
 '   history. Settings (email addresses etc.) are part of the code, so
 '   they come from the code file like everything else.
+'   The one exception: if this folder has no AppIcon.ico, it is copied
+'   from the share (see SyncIcon), so the window icon shows up.
 
 ' This copy's version. Filled in automatically by the updater.
 Const APP_VERSION = "1.01"
@@ -297,6 +299,11 @@ Const UpdateShareFolder = "\\YOUR-SERVER\YOUR-SHARE\EngagementTool\" ' <<< CHANG
 ' The two file names inside UpdateShareFolder.
 Const UpdateVersionFile = "version.txt"
 Const UpdateCodeFile = "EngagementTool_Code.txt"
+
+' The window icon. It must sit next to the .hta, so the updater copies
+' it from UpdateShareFolder whenever this folder doesn't have one yet.
+' Keep this name the same as ICON="..." in the HTA:APPLICATION tag.
+Const UpdateIconFile = "AppIcon.ico"
 
 ' ============================================================
 ' Configuration -- edit these to match your environment
@@ -341,6 +348,19 @@ TemplatesFolder = CreateObject("WScript.Shell").ExpandEnvironmentStrings("%APPDA
 Dim Tab4TemplateFile
 Tab4TemplateFile = "Templates\{{TAB4_TEMPLATE_FILE}}.oft" ' <<< CHANGE ME: your .oft file name
 ' NewTabFunctionality -- END: Tab 4 template file config
+
+' NewTabFunctionality -- START: Tabs 5-7 template file config
+' ---- Tabs 5, 6 and 7 one-click templates ----------------------------
+' These work exactly like Tab 4 above: each button opens its ONE .oft
+' file as an Outlook draft. Put each file in the "Templates" folder and
+' set its file name below (a full C:\... or \\server\... path also works).
+' The button labels are {{TAB5_NAME}}, {{TAB6_NAME}} and {{TAB7_NAME}}
+' (search for them to rename the buttons).
+Dim Tab5TemplateFile, Tab6TemplateFile, Tab7TemplateFile
+Tab5TemplateFile = "Templates\{{TAB5_TEMPLATE_FILE}}.oft" ' <<< CHANGE ME: your .oft file name
+Tab6TemplateFile = "Templates\{{TAB6_TEMPLATE_FILE}}.oft" ' <<< CHANGE ME: your .oft file name
+Tab7TemplateFile = "Templates\{{TAB7_TEMPLATE_FILE}}.oft" ' <<< CHANGE ME: your .oft file name
+' NewTabFunctionality -- END: Tabs 5-7 template file config
 
 ' ---- Category 2 (Severity Templates): names, descriptions, and who to email ----
 ' One line per template (Category 2, slots 1-5). Each line sets three
@@ -450,6 +470,23 @@ Function StampVersion(code, ver)
     StampVersion = re.Replace(code, "Const APP_VERSION = """ & ver & """")
 End Function
 
+' SyncIcon: the window icon (AppIcon.ico) is a separate file that has
+' to sit in the same folder as the .hta. The updater only replaces the
+' .hta, so a folder without the icon would show no icon. This copies
+' it from the share if it's missing (an existing icon is never
+' replaced). Windows reads the icon when the tool opens, so a newly
+' copied icon shows from the next time it's opened.
+Sub SyncIcon
+    On Error Resume Next
+    Dim myFolder, localIcon, shareIcon
+    myFolder = Left(AppFilePath(), InStrRev(AppFilePath(), "\"))
+    localIcon = myFolder & UpdateIconFile
+    shareIcon = UpdateShareFolder & UpdateIconFile
+    If gFso.FileExists(localIcon) Then Exit Sub      ' already has an icon
+    If Not gFso.FileExists(shareIcon) Then Exit Sub  ' share offline / no icon there
+    gFso.CopyFile shareIcon, localIcon, False
+End Sub
+
 ' CheckForUpdate: runs first thing at startup (see Window_OnLoad).
 ' Returns True if the new code was installed. In that case this window
 ' is closing and the updated tool is opening.
@@ -465,6 +502,9 @@ Function CheckForUpdate
     codePath = UpdateShareFolder & UpdateCodeFile
     myPath = AppFilePath()
     If myPath = "" Then Exit Function
+
+    ' Make sure this folder has the window icon (copies it if missing).
+    SyncIcon
 
     ' Step 1: what version does version.txt say?
     shareVer = ReadShareVersion(versionPath)
@@ -501,7 +541,10 @@ Function CheckForUpdate
     ' SINGLEINSTANCE="yes" would block the new window while this one is
     ' still open, so the relaunch waits about 1 second first (the ping is
     ' just a delay). The 0 keeps the command window hidden.
+    ' It also starts in the tool's own folder so relative paths like
+    ' ICON="AppIcon.ico" resolve the same way as a normal double-click.
     Set sh = CreateObject("WScript.Shell")
+    sh.CurrentDirectory = Left(myPath, InStrRev(myPath, "\"))
     sh.Run "cmd /c ping -n 2 127.0.0.1 >nul & start """" mshta.exe """ & myPath & """", 0, False
     CheckForUpdate = True
     self.close
@@ -1693,44 +1736,62 @@ End Sub
 ' ============================================================
 
 ' ============================================================
-' NewTabFunctionality -- START: TAB 4 button (Category 1) -- open one .oft
+' NewTabFunctionality -- START: TAB 4-7 buttons (Category 1) -- open one .oft
 ' ============================================================
-' Clicking the {{TAB4_NAME}} button opens the template set in
-' Tab4TemplateFile (see the "Tab 4 template file config" block near the
-' top of the script) as an Outlook draft. It does NOT switch panels, so
-' the current tab stays on screen.
+' Clicking the {{TAB4_NAME}}, {{TAB5_NAME}}, {{TAB6_NAME}} or {{TAB7_NAME}}
+' button opens the template set in Tab4TemplateFile / Tab5TemplateFile /
+' Tab6TemplateFile / Tab7TemplateFile (see the template file config
+' blocks near the top of the script) as an Outlook draft. It does NOT
+' switch panels, so the current tab stays on screen.
+' All four buttons share the same code below. Each button's click
+' handler just says which file setting to use.
 
-' NewTabFunctionality -- Tab4TemplatePath: turns Tab4TemplateFile into a
-' full path (relative paths are resolved from this .hta's folder).
-Function Tab4TemplatePath
-    If InStr(Tab4TemplateFile, ":") > 0 Or Left(Tab4TemplateFile, 2) = "\\" Then
-        Tab4TemplatePath = Tab4TemplateFile
+' NewTabFunctionality -- one click handler per button (wired up in the
+' <button onclick="..."> tags). The second value is the setting's name,
+' used in the "Template not found" message so you know which one to fix.
+Sub OpenTab4Template : OpenOneClickTemplate Tab4TemplateFile, "Tab4TemplateFile" : End Sub
+Sub OpenTab5Template : OpenOneClickTemplate Tab5TemplateFile, "Tab5TemplateFile" : End Sub
+Sub OpenTab6Template : OpenOneClickTemplate Tab6TemplateFile, "Tab6TemplateFile" : End Sub
+Sub OpenTab7Template : OpenOneClickTemplate Tab7TemplateFile, "Tab7TemplateFile" : End Sub
+
+' NewTabFunctionality -- OneClickTemplatePath: turns a template file
+' setting into a full path (relative paths are resolved from this .hta's folder).
+Function OneClickTemplatePath(templateFile)
+    If InStr(templateFile, ":") > 0 Or Left(templateFile, 2) = "\\" Then
+        OneClickTemplatePath = templateFile
     Else
-        Tab4TemplatePath = ScriptFolder() & Tab4TemplateFile
+        OneClickTemplatePath = ScriptFolder() & templateFile
     End If
 End Function
 
-' NewTabFunctionality -- OpenTab4Template: runs on button click.
+' Which template the button asked for. window.setTimeout can't pass
+' values along, so OpenOneClickTemplate stores them here and
+' FinishOpenOneClickTemplate reads them a moment later.
+Dim gOneClickTemplatePath, gOneClickTemplateSetting
+
+' NewTabFunctionality -- OpenOneClickTemplate: runs on button click.
 ' Same "please wait" deferral as OpenSelectedTemplate -- launching Outlook
 ' can freeze the UI for several seconds, so show the wait cursor first.
-Sub OpenTab4Template
+Sub OpenOneClickTemplate(templateFile, settingName)
     On Error Resume Next
     If gSendInProgress Then Exit Sub
     gSendInProgress = True
+    gOneClickTemplatePath = OneClickTemplatePath(templateFile)
+    gOneClickTemplateSetting = settingName
     document.body.style.cursor = "wait"
-    window.setTimeout "FinishOpenTab4Template", 30
+    window.setTimeout "FinishOpenOneClickTemplate", 30
 End Sub
 
-' NewTabFunctionality -- FinishOpenTab4Template: does the actual Outlook
+' NewTabFunctionality -- FinishOpenOneClickTemplate: does the actual Outlook
 ' work (CreateItemFromTemplate + Display -- a draft, not sent).
-Sub FinishOpenTab4Template
+Sub FinishOpenOneClickTemplate
     On Error Resume Next
     Dim path, objOutlook, objMail
-    path = Tab4TemplatePath()
+    path = gOneClickTemplatePath
 
     If Not gFso.FileExists(path) Then
         MsgBox "Template not found:" & vbCrLf & path & vbCrLf & vbCrLf & _
-               "Set Tab4TemplateFile at the top of the script to your .oft file."
+               "Set " & gOneClickTemplateSetting & " at the top of the script to your .oft file."
     Else
         Err.Clear
         Set objOutlook = CreateObject("Outlook.Application")
@@ -1753,7 +1814,7 @@ Sub FinishOpenTab4Template
     document.body.style.cursor = "default"
 End Sub
 ' ============================================================
-' NewTabFunctionality -- END: TAB 4 button (Category 1) -- open one .oft
+' NewTabFunctionality -- END: TAB 4-7 buttons (Category 1) -- open one .oft
 ' ============================================================
 
 ' ============================================================
@@ -1827,8 +1888,13 @@ End Sub
     <button id="tabBtn3" class="tab-btn tab-btn-purple" onclick="ShowTab3">Email Templates</button>
     <!-- NewTabFunctionality -- Tab 4 button: opens ONE .oft directly (no panel).
          Label = {{TAB4_NAME}}; the .oft path is set in Tab4TemplateFile (script config, top of file);
-         the click handler is OpenTab4Template (search "TAB 4 button"). -->
+         the click handler is OpenTab4Template (search "TAB 4-7 buttons"). -->
     <button id="tabBtn4" class="tab-btn tab-btn-purple" onclick="OpenTab4Template" title="Opens the {{TAB4_NAME}} Outlook template">{{TAB4_NAME}}</button>
+    <!-- NewTabFunctionality -- Tab 5-7 buttons: same as Tab 4, each opens ONE .oft directly (no panel).
+         The .oft paths are set in Tab5TemplateFile / Tab6TemplateFile / Tab7TemplateFile (top of the script). -->
+    <button id="tabBtn5" class="tab-btn tab-btn-purple" onclick="OpenTab5Template" title="Opens the {{TAB5_NAME}} Outlook template">{{TAB5_NAME}}</button>
+    <button id="tabBtn6" class="tab-btn tab-btn-purple" onclick="OpenTab6Template" title="Opens the {{TAB6_NAME}} Outlook template">{{TAB6_NAME}}</button>
+    <button id="tabBtn7" class="tab-btn tab-btn-purple" onclick="OpenTab7Template" title="Opens the {{TAB7_NAME}} Outlook template">{{TAB7_NAME}}</button>
 </div>
 
 <div id="subNavSeverity" style="display:none">
@@ -2248,6 +2314,7 @@ End Sub
                 <li><b>Any different number counts</b>, not just a higher one, so you can roll back by putting the old code back and changing the number again.</li>
                 <li><b>Failure is safe:</b> share offline, no permission, or an empty/half-pasted code file all leave the current version running. Nothing is half-replaced. If an update doesn't seem to happen, check that the code file is complete.</li>
                 <li>Updates replace only the .hta, so <code>EmailLog.csv</code> and <code>Templates\</code> are never touched. Settings like email addresses are part of the code, so they come from the code file like everything else.</li>
+                <li><b>Window icon:</b> <code>ICON="AppIcon.ico"</code> is looked up next to the .hta, and updates only replace the .hta. <code>SyncIcon</code> (called from <code>CheckForUpdate</code>) copies <code>AppIcon.ico</code> from the update folder whenever this folder doesn't have one. Keep a copy of <code>AppIcon.ico</code> in the update folder.</li>
                 <li>Set <code>UpdateShareFolder = ""</code> to turn updates off completely.</li>
             </ul>
 
@@ -2295,6 +2362,8 @@ End Sub
                 <li><code>Tab2ToEmails</code> / <code>Tab2CcEmails</code> -- top of the script.</li>
                 <!-- NewTabFunctionality -- Developer Notes entry for Tab 3 -->
                 <li><code>TemplatesFolder</code> -- top of the script. Tab 3 (Email Templates) lists every <code>.oft</code> file in this folder. <code>LoadTemplateList</code> rebuilds the dropdown each time Tab 3 is shown or Refresh List is clicked. When a template is picked, <code>OpenSelectedTemplate</code>/<code>FinishOpenTemplate</code> opens it using <code>CreateItemFromTemplate</code> + <code>.Display</code>, with the same wait-message delay and <code>gSendInProgress</code> guard as <code>BeginSend</code>. The signature is NOT added, because the template's own body is used as-is.</li>
+                <!-- NewTabFunctionality -- Developer Notes entry for Tabs 4-7 -->
+                <li><code>Tab4TemplateFile</code> / <code>Tab5TemplateFile</code> / <code>Tab6TemplateFile</code> / <code>Tab7TemplateFile</code> -- top of the script. Each of the four one-click buttons opens its ONE <code>.oft</code> directly (no panel). They all share the same code: each button's <code>OpenTab#Template</code> handler calls <code>OpenOneClickTemplate</code> with its file setting, which stores the path in <code>gOneClickTemplatePath</code> (since <code>window.setTimeout</code> can't pass values) and <code>FinishOpenOneClickTemplate</code> opens it with <code>CreateItemFromTemplate</code> + <code>.Display</code> after the usual wait-cursor delay. To add another button, copy one <code>&lt;button&gt;</code>, one <code>OpenTab#Template</code> line, and one <code>Tab#TemplateFile</code> setting.</li>
                 <li><code>SevTabName()</code> / <code>SevTabDesc()</code> / <code>SevTabEmail()</code> / <code>SevTabIntro()</code> -- top of the script, one entry per Category 2 tab (1-5).</li>
                 <li><code>DevNotesPassword</code> -- top of the script (see Security note below).</li>
                 <li><b>Every visible title, tab label, and description in this file is a placeholder using a unique <code>{{TOKEN}}</code> name (changed 2026-09-11)</b> -- e.g. <code>{{APP_TITLE}}</code>, <code>{{TAB1_NAME}}</code>, <code>{{SEV3_PANEL_DESC}}</code>. Before this, every one of these placeholders shared the exact same literal text ("Enter Your Title Here" / "Enter Your Tab N Here" / "Enter your description here.") across many unrelated spots -- a global Find & Replace on that text couldn't tell the app's main title apart from a severity tab's panel title apart from another severity tab's panel title, since they were all byte-identical. Each <code>{{TOKEN}}</code> is now unique to what it represents, and appears in EVERY place that value needs to show up consistently (e.g. <code>{{SEV1_NAME}}</code> appears in the nav button, the <code>SevTabName(1)</code> script config, and the How-To text) -- so a single Find & Replace per token updates it everywhere at once, correctly. Search the file for <code>{{</code> to find every remaining placeholder.</li>
