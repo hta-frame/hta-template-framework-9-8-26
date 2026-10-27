@@ -565,7 +565,7 @@ Function CheckForUpdate
     ' ICON="AppIcon.ico" resolve the same way as a normal double-click.
     Set sh = CreateObject("WScript.Shell")
     sh.CurrentDirectory = Left(myPath, InStrRev(myPath, "\"))
-    sh.Run "cmd /c ping -n 2 127.0.0.1 >nul & start """" mshta.exe """ & myPath & """", 0, False
+    sh.Run "cmd /c ping -n 2 127.0.0.1 >nul & start """" /D """ & Left(myPath, InStrRev(myPath, "\") - 1) & """ """ & myPath & """", 0, False
     CheckForUpdate = True
     self.close
 End Function
