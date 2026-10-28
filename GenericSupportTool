@@ -130,6 +130,11 @@
         cursor: pointer;
         background: #38435D;
         color: #ccc;
+        /* Space between buttons. The "gap: 8px" on #subNavGeneral above is
+           ignored by the old IE engine HTAs use, so without this margin,
+           buttons written back to back in the HTML are drawn touching and
+           look like one long button. */
+        margin: 0 8px 8px 0;
     }
     .tab-btn-red.active { background: #E61231; color: #fff; }
     .tab-btn-blue.active { background: #1F2A44; color: #fff; }
@@ -268,7 +273,7 @@
 '   Every time this tool opens, it reads version.txt from the share.
 '   If that number is different from this copy's version (shown at the
 '   top of the tool as "Current version X.XX"), it replaces ALL of this
-'   .hta's code with EngagementTool_Code.txt and reopens itself.
+'   .hta's code with EngagementTool_Code.txt, then asks the user to open it again.
 '   If the share can't be reached (offline, VPN down, no access) the
 '   tool just opens as normal on its current version.
 '
@@ -293,7 +298,7 @@
 Const APP_VERSION = "1.01"
 
 ' The shared folder that holds version.txt and the code file.
-' Keep the "\" at the end. Set it to "" to turn automatic updates off.
+' The "\" at the end is optional. Set it to "" to turn automatic updates off.
 Const UpdateShareFolder = "\\YOUR-SERVER\YOUR-SHARE\EngagementTool\" ' <<< CHANGE ME: your share path
 
 ' The two file names inside UpdateShareFolder.
@@ -349,38 +354,18 @@ Dim Tab4TemplateFile
 Tab4TemplateFile = "Templates\{{TAB4_TEMPLATE_FILE}}.oft" ' <<< CHANGE ME: your .oft file name
 ' NewTabFunctionality -- END: Tab 4 template file config
 
-' NewTabFunctionality -- START: Tab 5 template file config
-' ---- Tab 5 one-click template ---------------------------------------
-' The {{TAB5_NAME}} button (next to the {{TAB4_NAME}} button) opens this ONE
-' Outlook template (.oft) directly -- no panel, no dropdown.
-' >>> ADD YOUR .oft HERE: put the file in the "Templates" folder next to
-'     this .hta and set its file name below. A relative path is resolved
-'     from this .hta's folder; a full path (C:\... or \\server\...) also works.
-Dim Tab5TemplateFile
+' NewTabFunctionality -- START: Tabs 5-7 template file config
+' ---- Tabs 5, 6 and 7 one-click templates ----------------------------
+' These work exactly like Tab 4 above: each button opens its ONE .oft
+' file as an Outlook draft. Put each file in the "Templates" folder and
+' set its file name below (a full C:\... or \\server\... path also works).
+' The button labels are {{TAB5_NAME}}, {{TAB6_NAME}} and {{TAB7_NAME}}
+' (search for them to rename the buttons).
+Dim Tab5TemplateFile, Tab6TemplateFile, Tab7TemplateFile
 Tab5TemplateFile = "Templates\{{TAB5_TEMPLATE_FILE}}.oft" ' <<< CHANGE ME: your .oft file name
-' NewTabFunctionality -- END: Tab 5 template file config
-
-' NewTabFunctionality -- START: Tab 6 template file config
-' ---- Tab 6 one-click template ---------------------------------------
-' The {{TAB6_NAME}} button (next to the {{TAB5_NAME}} button) opens this ONE
-' Outlook template (.oft) directly -- no panel, no dropdown.
-' >>> ADD YOUR .oft HERE: put the file in the "Templates" folder next to
-'     this .hta and set its file name below. A relative path is resolved
-'     from this .hta's folder; a full path (C:\... or \\server\...) also works.
-Dim Tab6TemplateFile
 Tab6TemplateFile = "Templates\{{TAB6_TEMPLATE_FILE}}.oft" ' <<< CHANGE ME: your .oft file name
-' NewTabFunctionality -- END: Tab 6 template file config
-
-' NewTabFunctionality -- START: Tab 7 template file config
-' ---- Tab 7 one-click template ---------------------------------------
-' The {{TAB7_NAME}} button (next to the {{TAB6_NAME}} button) opens this ONE
-' Outlook template (.oft) directly -- no panel, no dropdown.
-' >>> ADD YOUR .oft HERE: put the file in the "Templates" folder next to
-'     this .hta and set its file name below. A relative path is resolved
-'     from this .hta's folder; a full path (C:\... or \\server\...) also works.
-Dim Tab7TemplateFile
 Tab7TemplateFile = "Templates\{{TAB7_TEMPLATE_FILE}}.oft" ' <<< CHANGE ME: your .oft file name
-' NewTabFunctionality -- END: Tab 7 template file config
+' NewTabFunctionality -- END: Tabs 5-7 template file config
 
 ' ---- Category 2 (Severity Templates): names, descriptions, and who to email ----
 ' One line per template (Category 2, slots 1-5). Each line sets three
@@ -490,6 +475,16 @@ Function StampVersion(code, ver)
     StampVersion = re.Replace(code, "Const APP_VERSION = """ & ver & """")
 End Function
 
+' SharePath: the full path of a file inside UpdateShareFolder.
+' Adds the "\" between folder and file name if the share path
+' doesn't end with one, so the path works with or without it.
+Function SharePath(fileName)
+    Dim folder
+    folder = UpdateShareFolder
+    If Right(folder, 1) <> "\" Then folder = folder & "\"
+    SharePath = folder & fileName
+End Function
+
 ' SyncIcon: the window icon (AppIcon.ico) is a separate file that has
 ' to sit in the same folder as the .hta. The updater only replaces the
 ' .hta, so a folder without the icon would show no icon. This copies
@@ -501,7 +496,7 @@ Sub SyncIcon
     Dim myFolder, localIcon, shareIcon
     myFolder = Left(AppFilePath(), InStrRev(AppFilePath(), "\"))
     localIcon = myFolder & UpdateIconFile
-    shareIcon = UpdateShareFolder & UpdateIconFile
+    shareIcon = SharePath(UpdateIconFile)
     If gFso.FileExists(localIcon) Then Exit Sub      ' already has an icon
     If Not gFso.FileExists(shareIcon) Then Exit Sub  ' share offline / no icon there
     gFso.CopyFile shareIcon, localIcon, False
@@ -509,7 +504,7 @@ End Sub
 
 ' CheckForUpdate: runs first thing at startup (see Window_OnLoad).
 ' Returns True if the new code was installed. In that case this window
-' is closing and the updated tool is opening.
+' is closing and the user opens the updated tool again.
 ' Any problem along the way (share offline, no permission, bad code
 ' file) quietly leaves the current version running. Nothing is lost.
 Function CheckForUpdate
@@ -517,9 +512,9 @@ Function CheckForUpdate
     If UpdateShareFolder = "" Then Exit Function ' updates turned off
 
     On Error Resume Next
-    Dim versionPath, codePath, myPath, tempPath, shareVer, newCode, ts, sh
-    versionPath = UpdateShareFolder & UpdateVersionFile
-    codePath = UpdateShareFolder & UpdateCodeFile
+    Dim versionPath, codePath, myPath, tempPath, shareVer, newCode, ts
+    versionPath = SharePath(UpdateVersionFile)
+    codePath = SharePath(UpdateCodeFile)
     myPath = AppFilePath()
     If myPath = "" Then Exit Function
 
@@ -557,15 +552,12 @@ Function CheckForUpdate
     If Err.Number <> 0 Then gFso.DeleteFile tempPath, True : Exit Function
     gFso.DeleteFile tempPath, True
 
-    ' Step 6: reopen on the new version, then close this window.
-    ' SINGLEINSTANCE="yes" would block the new window while this one is
-    ' still open, so the relaunch waits about 1 second first (the ping is
-    ' just a delay). The 0 keeps the command window hidden.
-    ' It also starts in the tool's own folder so relative paths like
-    ' ICON="AppIcon.ico" resolve the same way as a normal double-click.
-    Set sh = CreateObject("WScript.Shell")
-    sh.CurrentDirectory = Left(myPath, InStrRev(myPath, "\"))
-    sh.Run "cmd /c ping -n 2 127.0.0.1 >nul & start """" /D """ & Left(myPath, InStrRev(myPath, "\") - 1) & """ """ & myPath & """", 0, False
+    ' Step 6: tell the user, then close. The user opens the tool again
+    ' (double-click) to get the new version. The tool doesn't reopen
+    ' itself, because on Windows 11 a window the tool reopens by itself
+    ' shows no icon on the taskbar. One opened by the user does.
+    MsgBox "The tool was updated to version " & shareVer & "." & vbCrLf & _
+           "Please open it again.", vbInformation, "Update installed"
     CheckForUpdate = True
     self.close
 End Function
@@ -1756,44 +1748,62 @@ End Sub
 ' ============================================================
 
 ' ============================================================
-' NewTabFunctionality -- START: TAB 4 button (Category 1) -- open one .oft
+' NewTabFunctionality -- START: TAB 4-7 buttons (Category 1) -- open one .oft
 ' ============================================================
-' Clicking the {{TAB4_NAME}} button opens the template set in
-' Tab4TemplateFile (see the "Tab 4 template file config" block near the
-' top of the script) as an Outlook draft. It does NOT switch panels, so
-' the current tab stays on screen.
+' Clicking the {{TAB4_NAME}}, {{TAB5_NAME}}, {{TAB6_NAME}} or {{TAB7_NAME}}
+' button opens the template set in Tab4TemplateFile / Tab5TemplateFile /
+' Tab6TemplateFile / Tab7TemplateFile (see the template file config
+' blocks near the top of the script) as an Outlook draft. It does NOT
+' switch panels, so the current tab stays on screen.
+' All four buttons share the same code below. Each button's click
+' handler just says which file setting to use.
 
-' NewTabFunctionality -- Tab4TemplatePath: turns Tab4TemplateFile into a
-' full path (relative paths are resolved from this .hta's folder).
-Function Tab4TemplatePath
-    If InStr(Tab4TemplateFile, ":") > 0 Or Left(Tab4TemplateFile, 2) = "\\" Then
-        Tab4TemplatePath = Tab4TemplateFile
+' NewTabFunctionality -- one click handler per button (wired up in the
+' <button onclick="..."> tags). The second value is the setting's name,
+' used in the "Template not found" message so you know which one to fix.
+Sub OpenTab4Template : OpenOneClickTemplate Tab4TemplateFile, "Tab4TemplateFile" : End Sub
+Sub OpenTab5Template : OpenOneClickTemplate Tab5TemplateFile, "Tab5TemplateFile" : End Sub
+Sub OpenTab6Template : OpenOneClickTemplate Tab6TemplateFile, "Tab6TemplateFile" : End Sub
+Sub OpenTab7Template : OpenOneClickTemplate Tab7TemplateFile, "Tab7TemplateFile" : End Sub
+
+' NewTabFunctionality -- OneClickTemplatePath: turns a template file
+' setting into a full path (relative paths are resolved from this .hta's folder).
+Function OneClickTemplatePath(templateFile)
+    If InStr(templateFile, ":") > 0 Or Left(templateFile, 2) = "\\" Then
+        OneClickTemplatePath = templateFile
     Else
-        Tab4TemplatePath = ScriptFolder() & Tab4TemplateFile
+        OneClickTemplatePath = ScriptFolder() & templateFile
     End If
 End Function
 
-' NewTabFunctionality -- OpenTab4Template: runs on button click.
+' Which template the button asked for. window.setTimeout can't pass
+' values along, so OpenOneClickTemplate stores them here and
+' FinishOpenOneClickTemplate reads them a moment later.
+Dim gOneClickTemplatePath, gOneClickTemplateSetting
+
+' NewTabFunctionality -- OpenOneClickTemplate: runs on button click.
 ' Same "please wait" deferral as OpenSelectedTemplate -- launching Outlook
 ' can freeze the UI for several seconds, so show the wait cursor first.
-Sub OpenTab4Template
+Sub OpenOneClickTemplate(templateFile, settingName)
     On Error Resume Next
     If gSendInProgress Then Exit Sub
     gSendInProgress = True
+    gOneClickTemplatePath = OneClickTemplatePath(templateFile)
+    gOneClickTemplateSetting = settingName
     document.body.style.cursor = "wait"
-    window.setTimeout "FinishOpenTab4Template", 30
+    window.setTimeout "FinishOpenOneClickTemplate", 30
 End Sub
 
-' NewTabFunctionality -- FinishOpenTab4Template: does the actual Outlook
+' NewTabFunctionality -- FinishOpenOneClickTemplate: does the actual Outlook
 ' work (CreateItemFromTemplate + Display -- a draft, not sent).
-Sub FinishOpenTab4Template
+Sub FinishOpenOneClickTemplate
     On Error Resume Next
     Dim path, objOutlook, objMail
-    path = Tab4TemplatePath()
+    path = gOneClickTemplatePath
 
     If Not gFso.FileExists(path) Then
         MsgBox "Template not found:" & vbCrLf & path & vbCrLf & vbCrLf & _
-               "Set Tab4TemplateFile at the top of the script to your .oft file."
+               "Set " & gOneClickTemplateSetting & " at the top of the script to your .oft file."
     Else
         Err.Clear
         Set objOutlook = CreateObject("Outlook.Application")
@@ -1816,199 +1826,7 @@ Sub FinishOpenTab4Template
     document.body.style.cursor = "default"
 End Sub
 ' ============================================================
-' NewTabFunctionality -- END: TAB 4 button (Category 1) -- open one .oft
-' ============================================================
-
-' ============================================================
-' NewTabFunctionality -- START: TAB 5 button (Category 1) -- open one .oft
-' ============================================================
-' Clicking the {{TAB5_NAME}} button opens the template set in
-' Tab5TemplateFile (see the "Tab 5 template file config" block near the
-' top of the script) as an Outlook draft. It does NOT switch panels, so
-' the current tab stays on screen.
-
-' NewTabFunctionality -- Tab5TemplatePath: turns Tab5TemplateFile into a
-' full path (relative paths are resolved from this .hta's folder).
-Function Tab5TemplatePath
-    If InStr(Tab5TemplateFile, ":") > 0 Or Left(Tab5TemplateFile, 2) = "\\" Then
-        Tab5TemplatePath = Tab5TemplateFile
-    Else
-        Tab5TemplatePath = ScriptFolder() & Tab5TemplateFile
-    End If
-End Function
-
-' NewTabFunctionality -- OpenTab5Template: runs on button click.
-' Same "please wait" deferral as OpenSelectedTemplate -- launching Outlook
-' can freeze the UI for several seconds, so show the wait cursor first.
-Sub OpenTab5Template
-    On Error Resume Next
-    If gSendInProgress Then Exit Sub
-    gSendInProgress = True
-    document.body.style.cursor = "wait"
-    window.setTimeout "FinishOpenTab5Template", 30
-End Sub
-
-' NewTabFunctionality -- FinishOpenTab5Template: does the actual Outlook
-' work (CreateItemFromTemplate + Display -- a draft, not sent).
-Sub FinishOpenTab5Template
-    On Error Resume Next
-    Dim path, objOutlook, objMail
-    path = Tab5TemplatePath()
-
-    If Not gFso.FileExists(path) Then
-        MsgBox "Template not found:" & vbCrLf & path & vbCrLf & vbCrLf & _
-               "Set Tab5TemplateFile at the top of the script to your .oft file."
-    Else
-        Err.Clear
-        Set objOutlook = CreateObject("Outlook.Application")
-        If Err.Number <> 0 Then
-            MsgBox "Could not connect to Outlook. Is it installed?"
-        Else
-            Err.Clear
-            Set objMail = objOutlook.CreateItemFromTemplate(path)
-            If Err.Number <> 0 Then
-                MsgBox "Could not open template:" & vbCrLf & path & vbCrLf & vbCrLf & Err.Description
-            Else
-                objMail.Display
-            End If
-        End If
-        Set objMail = Nothing
-        Set objOutlook = Nothing
-    End If
-
-    gSendInProgress = False
-    document.body.style.cursor = "default"
-End Sub
-' ============================================================
-' NewTabFunctionality -- END: TAB 5 button (Category 1) -- open one .oft
-' ============================================================
-
-' ============================================================
-' NewTabFunctionality -- START: TAB 6 button (Category 1) -- open one .oft
-' ============================================================
-' Clicking the {{TAB6_NAME}} button opens the template set in
-' Tab6TemplateFile (see the "Tab 6 template file config" block near the
-' top of the script) as an Outlook draft. It does NOT switch panels, so
-' the current tab stays on screen.
-
-' NewTabFunctionality -- Tab6TemplatePath: turns Tab6TemplateFile into a
-' full path (relative paths are resolved from this .hta's folder).
-Function Tab6TemplatePath
-    If InStr(Tab6TemplateFile, ":") > 0 Or Left(Tab6TemplateFile, 2) = "\\" Then
-        Tab6TemplatePath = Tab6TemplateFile
-    Else
-        Tab6TemplatePath = ScriptFolder() & Tab6TemplateFile
-    End If
-End Function
-
-' NewTabFunctionality -- OpenTab6Template: runs on button click.
-' Same "please wait" deferral as OpenSelectedTemplate -- launching Outlook
-' can freeze the UI for several seconds, so show the wait cursor first.
-Sub OpenTab6Template
-    On Error Resume Next
-    If gSendInProgress Then Exit Sub
-    gSendInProgress = True
-    document.body.style.cursor = "wait"
-    window.setTimeout "FinishOpenTab6Template", 30
-End Sub
-
-' NewTabFunctionality -- FinishOpenTab6Template: does the actual Outlook
-' work (CreateItemFromTemplate + Display -- a draft, not sent).
-Sub FinishOpenTab6Template
-    On Error Resume Next
-    Dim path, objOutlook, objMail
-    path = Tab6TemplatePath()
-
-    If Not gFso.FileExists(path) Then
-        MsgBox "Template not found:" & vbCrLf & path & vbCrLf & vbCrLf & _
-               "Set Tab6TemplateFile at the top of the script to your .oft file."
-    Else
-        Err.Clear
-        Set objOutlook = CreateObject("Outlook.Application")
-        If Err.Number <> 0 Then
-            MsgBox "Could not connect to Outlook. Is it installed?"
-        Else
-            Err.Clear
-            Set objMail = objOutlook.CreateItemFromTemplate(path)
-            If Err.Number <> 0 Then
-                MsgBox "Could not open template:" & vbCrLf & path & vbCrLf & vbCrLf & Err.Description
-            Else
-                objMail.Display
-            End If
-        End If
-        Set objMail = Nothing
-        Set objOutlook = Nothing
-    End If
-
-    gSendInProgress = False
-    document.body.style.cursor = "default"
-End Sub
-' ============================================================
-' NewTabFunctionality -- END: TAB 6 button (Category 1) -- open one .oft
-' ============================================================
-
-' ============================================================
-' NewTabFunctionality -- START: TAB 7 button (Category 1) -- open one .oft
-' ============================================================
-' Clicking the {{TAB7_NAME}} button opens the template set in
-' Tab7TemplateFile (see the "Tab 7 template file config" block near the
-' top of the script) as an Outlook draft. It does NOT switch panels, so
-' the current tab stays on screen.
-
-' NewTabFunctionality -- Tab7TemplatePath: turns Tab7TemplateFile into a
-' full path (relative paths are resolved from this .hta's folder).
-Function Tab7TemplatePath
-    If InStr(Tab7TemplateFile, ":") > 0 Or Left(Tab7TemplateFile, 2) = "\\" Then
-        Tab7TemplatePath = Tab7TemplateFile
-    Else
-        Tab7TemplatePath = ScriptFolder() & Tab7TemplateFile
-    End If
-End Function
-
-' NewTabFunctionality -- OpenTab7Template: runs on button click.
-' Same "please wait" deferral as OpenSelectedTemplate -- launching Outlook
-' can freeze the UI for several seconds, so show the wait cursor first.
-Sub OpenTab7Template
-    On Error Resume Next
-    If gSendInProgress Then Exit Sub
-    gSendInProgress = True
-    document.body.style.cursor = "wait"
-    window.setTimeout "FinishOpenTab7Template", 30
-End Sub
-
-' NewTabFunctionality -- FinishOpenTab7Template: does the actual Outlook
-' work (CreateItemFromTemplate + Display -- a draft, not sent).
-Sub FinishOpenTab7Template
-    On Error Resume Next
-    Dim path, objOutlook, objMail
-    path = Tab7TemplatePath()
-
-    If Not gFso.FileExists(path) Then
-        MsgBox "Template not found:" & vbCrLf & path & vbCrLf & vbCrLf & _
-               "Set Tab7TemplateFile at the top of the script to your .oft file."
-    Else
-        Err.Clear
-        Set objOutlook = CreateObject("Outlook.Application")
-        If Err.Number <> 0 Then
-            MsgBox "Could not connect to Outlook. Is it installed?"
-        Else
-            Err.Clear
-            Set objMail = objOutlook.CreateItemFromTemplate(path)
-            If Err.Number <> 0 Then
-                MsgBox "Could not open template:" & vbCrLf & path & vbCrLf & vbCrLf & Err.Description
-            Else
-                objMail.Display
-            End If
-        End If
-        Set objMail = Nothing
-        Set objOutlook = Nothing
-    End If
-
-    gSendInProgress = False
-    document.body.style.cursor = "default"
-End Sub
-' ============================================================
-' NewTabFunctionality -- END: TAB 7 button (Category 1) -- open one .oft
+' NewTabFunctionality -- END: TAB 4-7 buttons (Category 1) -- open one .oft
 ' ============================================================
 
 ' ============================================================
@@ -2048,7 +1866,7 @@ End Sub
 
 Sub Window_OnLoad
     ' Check the share for a newer version first. If one was just
-    ' installed, this window is closing and the new one is opening,
+    ' installed, this window is closing (the user opens it again),
     ' so stop here.
     If CheckForUpdate() Then Exit Sub
     ShowAppVersion
@@ -2082,19 +1900,12 @@ End Sub
     <button id="tabBtn3" class="tab-btn tab-btn-purple" onclick="ShowTab3">Email Templates</button>
     <!-- NewTabFunctionality -- Tab 4 button: opens ONE .oft directly (no panel).
          Label = {{TAB4_NAME}}; the .oft path is set in Tab4TemplateFile (script config, top of file);
-         the click handler is OpenTab4Template (search "TAB 4 button"). -->
+         the click handler is OpenTab4Template (search "TAB 4-7 buttons"). -->
     <button id="tabBtn4" class="tab-btn tab-btn-purple" onclick="OpenTab4Template" title="Opens the {{TAB4_NAME}} Outlook template">{{TAB4_NAME}}</button>
-    <!-- NewTabFunctionality -- Tab 5 button: opens ONE .oft directly (no panel).
-         Label = {{TAB5_NAME}}; the .oft path is set in Tab5TemplateFile (script config, top of file);
-         the click handler is OpenTab5Template (search "TAB 5 button"). -->
+    <!-- NewTabFunctionality -- Tab 5-7 buttons: same as Tab 4, each opens ONE .oft directly (no panel).
+         The .oft paths are set in Tab5TemplateFile / Tab6TemplateFile / Tab7TemplateFile (top of the script). -->
     <button id="tabBtn5" class="tab-btn tab-btn-purple" onclick="OpenTab5Template" title="Opens the {{TAB5_NAME}} Outlook template">{{TAB5_NAME}}</button>
-    <!-- NewTabFunctionality -- Tab 6 button: opens ONE .oft directly (no panel).
-         Label = {{TAB6_NAME}}; the .oft path is set in Tab6TemplateFile (script config, top of file);
-         the click handler is OpenTab6Template (search "TAB 6 button"). -->
     <button id="tabBtn6" class="tab-btn tab-btn-purple" onclick="OpenTab6Template" title="Opens the {{TAB6_NAME}} Outlook template">{{TAB6_NAME}}</button>
-    <!-- NewTabFunctionality -- Tab 7 button: opens ONE .oft directly (no panel).
-         Label = {{TAB7_NAME}}; the .oft path is set in Tab7TemplateFile (script config, top of file);
-         the click handler is OpenTab7Template (search "TAB 7 button"). -->
     <button id="tabBtn7" class="tab-btn tab-btn-purple" onclick="OpenTab7Template" title="Opens the {{TAB7_NAME}} Outlook template">{{TAB7_NAME}}</button>
 </div>
 
@@ -2511,7 +2322,7 @@ End Sub
                 <li>This copy is version <b><span id="devNotesVersion"></span></b>. Update folder: <code><span id="devNotesShare"></span></code></li>
                 <li><b>The update folder holds two files:</b> <code>version.txt</code> (one line, the version number, e.g. 1.01) and <code>EngagementTool_Code.txt</code> (the complete .hta code).</li>
                 <li><b>Releasing an update:</b> (1) paste the complete new code into <code>EngagementTool_Code.txt</code> and save, then (2) change the number in <code>version.txt</code>. Every copy updates the next time it opens. Always save the code first and change the number last.</li>
-                <li><b>How it works:</b> <code>Window_OnLoad</code> calls <code>CheckForUpdate</code> first. If <code>version.txt</code> has a different number than this copy's <code>APP_VERSION</code>, it reads the code file, checks it looks complete (<code>IsCompleteCode</code>: HTA header, version line and closing html tag), writes the version.txt number into the code's version line (<code>StampVersion</code>, so you never edit the number inside the code by hand), saves it to <code>&lt;this file&gt;.updating</code>, copies that over this file, then reopens with <code>mshta</code> after a 1-second delay (needed because <code>SINGLEINSTANCE="yes"</code> would block the new window while the old one is still open) and closes.</li>
+                <li><b>How it works:</b> <code>Window_OnLoad</code> calls <code>CheckForUpdate</code> first. If <code>version.txt</code> has a different number than this copy's <code>APP_VERSION</code>, it reads the code file, checks it looks complete (<code>IsCompleteCode</code>: HTA header, version line and closing html tag), writes the version.txt number into the code's version line (<code>StampVersion</code>, so you never edit the number inside the code by hand), saves it to <code>&lt;this file&gt;.updating</code>, copies that over this file, then shows an "Update installed" message and closes. The user opens the tool again to get the new version. (The tool doesn't reopen itself: on Windows 11 a window the tool reopens by itself has no taskbar icon.)</li>
                 <li><b>Any different number counts</b>, not just a higher one, so you can roll back by putting the old code back and changing the number again.</li>
                 <li><b>Failure is safe:</b> share offline, no permission, or an empty/half-pasted code file all leave the current version running. Nothing is half-replaced. If an update doesn't seem to happen, check that the code file is complete.</li>
                 <li>Updates replace only the .hta, so <code>EmailLog.csv</code> and <code>Templates\</code> are never touched. Settings like email addresses are part of the code, so they come from the code file like everything else.</li>
@@ -2564,7 +2375,7 @@ End Sub
                 <!-- NewTabFunctionality -- Developer Notes entry for Tab 3 -->
                 <li><code>TemplatesFolder</code> -- top of the script. Tab 3 (Email Templates) lists every <code>.oft</code> file in this folder. <code>LoadTemplateList</code> rebuilds the dropdown each time Tab 3 is shown or Refresh List is clicked. When a template is picked, <code>OpenSelectedTemplate</code>/<code>FinishOpenTemplate</code> opens it using <code>CreateItemFromTemplate</code> + <code>.Display</code>, with the same wait-message delay and <code>gSendInProgress</code> guard as <code>BeginSend</code>. The signature is NOT added, because the template's own body is used as-is.</li>
                 <!-- NewTabFunctionality -- Developer Notes entry for Tabs 4-7 -->
-                <li><code>Tab4TemplateFile</code> / <code>Tab5TemplateFile</code> / <code>Tab6TemplateFile</code> / <code>Tab7TemplateFile</code> -- top of the script, one separate settings block per button. Each of the four one-click buttons ({{TAB4_NAME}}, {{TAB5_NAME}}, {{TAB6_NAME}}, {{TAB7_NAME}}) is fully independent: its own <code>Tab#TemplatePath</code>, <code>OpenTab#Template</code> and <code>FinishOpenTab#Template</code> (search "TAB # button"), so changing one never affects the others. Each opens its ONE <code>.oft</code> with <code>CreateItemFromTemplate</code> + <code>.Display</code> after the usual wait-cursor delay.</li>
+                <li><code>Tab4TemplateFile</code> / <code>Tab5TemplateFile</code> / <code>Tab6TemplateFile</code> / <code>Tab7TemplateFile</code> -- top of the script. Each of the four one-click buttons opens its ONE <code>.oft</code> directly (no panel). They all share the same code: each button's <code>OpenTab#Template</code> handler calls <code>OpenOneClickTemplate</code> with its file setting, which stores the path in <code>gOneClickTemplatePath</code> (since <code>window.setTimeout</code> can't pass values) and <code>FinishOpenOneClickTemplate</code> opens it with <code>CreateItemFromTemplate</code> + <code>.Display</code> after the usual wait-cursor delay. To add another button, copy one <code>&lt;button&gt;</code>, one <code>OpenTab#Template</code> line, and one <code>Tab#TemplateFile</code> setting.</li>
                 <li><code>SevTabName()</code> / <code>SevTabDesc()</code> / <code>SevTabEmail()</code> / <code>SevTabIntro()</code> -- top of the script, one entry per Category 2 tab (1-5).</li>
                 <li><code>DevNotesPassword</code> -- top of the script (see Security note below).</li>
                 <li><b>Every visible title, tab label, and description in this file is a placeholder using a unique <code>{{TOKEN}}</code> name (changed 2026-09-11)</b> -- e.g. <code>{{APP_TITLE}}</code>, <code>{{TAB1_NAME}}</code>, <code>{{SEV3_PANEL_DESC}}</code>. Before this, every one of these placeholders shared the exact same literal text ("Enter Your Title Here" / "Enter Your Tab N Here" / "Enter your description here.") across many unrelated spots -- a global Find & Replace on that text couldn't tell the app's main title apart from a severity tab's panel title apart from another severity tab's panel title, since they were all byte-identical. Each <code>{{TOKEN}}</code> is now unique to what it represents, and appears in EVERY place that value needs to show up consistently (e.g. <code>{{SEV1_NAME}}</code> appears in the nav button, the <code>SevTabName(1)</code> script config, and the How-To text) -- so a single Find & Replace per token updates it everywhere at once, correctly. Search the file for <code>{{</code> to find every remaining placeholder.</li>
