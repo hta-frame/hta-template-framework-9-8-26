@@ -1865,13 +1865,15 @@ Sub CloseDevNotes
 End Sub
 
 Sub Window_OnLoad
-    ' Check the share for a newer version first. If one was just
-    ' installed, this window is closing (the user opens it again),
-    ' so stop here.
-    If CheckForUpdate() Then Exit Sub
     ShowAppVersion
     InitLog
     ShowCategoryGeneral
+    ' Check the share for a newer version 2 seconds AFTER the window is
+    ' up, not while it is still opening. Reading the share while the
+    ' window opens can leave the Windows 11 taskbar button without its
+    ' icon. If an update is installed, CheckForUpdate shows a message
+    ' and closes the tool.
+    window.setTimeout "CheckForUpdate", 2000, "VBScript"
 End Sub
 
 </script>
@@ -2322,7 +2324,7 @@ End Sub
                 <li>This copy is version <b><span id="devNotesVersion"></span></b>. Update folder: <code><span id="devNotesShare"></span></code></li>
                 <li><b>The update folder holds two files:</b> <code>version.txt</code> (one line, the version number, e.g. 1.01) and <code>EngagementTool_Code.txt</code> (the complete .hta code).</li>
                 <li><b>Releasing an update:</b> (1) paste the complete new code into <code>EngagementTool_Code.txt</code> and save, then (2) change the number in <code>version.txt</code>. Every copy updates the next time it opens. Always save the code first and change the number last.</li>
-                <li><b>How it works:</b> <code>Window_OnLoad</code> calls <code>CheckForUpdate</code> first. If <code>version.txt</code> has a different number than this copy's <code>APP_VERSION</code>, it reads the code file, checks it looks complete (<code>IsCompleteCode</code>: HTA header, version line and closing html tag), writes the version.txt number into the code's version line (<code>StampVersion</code>, so you never edit the number inside the code by hand), saves it to <code>&lt;this file&gt;.updating</code>, copies that over this file, then shows an "Update installed" message and closes. The user opens the tool again to get the new version. (The tool doesn't reopen itself: on Windows 11 a window the tool reopens by itself has no taskbar icon.)</li>
+                <li><b>How it works:</b> <code>Window_OnLoad</code> runs <code>CheckForUpdate</code> 2 seconds after the window opens (checking during startup can leave the Windows 11 taskbar button without its icon). If <code>version.txt</code> has a different number than this copy's <code>APP_VERSION</code>, it reads the code file, checks it looks complete (<code>IsCompleteCode</code>: HTA header, version line and closing html tag), writes the version.txt number into the code's version line (<code>StampVersion</code>, so you never edit the number inside the code by hand), saves it to <code>&lt;this file&gt;.updating</code>, copies that over this file, then shows an "Update installed" message and closes. The user opens the tool again to get the new version. (The tool doesn't reopen itself: on Windows 11 a window the tool reopens by itself has no taskbar icon.)</li>
                 <li><b>Any different number counts</b>, not just a higher one, so you can roll back by putting the old code back and changing the number again.</li>
                 <li><b>Failure is safe:</b> share offline, no permission, or an empty/half-pasted code file all leave the current version running. Nothing is half-replaced. If an update doesn't seem to happen, check that the code file is complete.</li>
                 <li>Updates replace only the .hta, so <code>EmailLog.csv</code> and <code>Templates\</code> are never touched. Settings like email addresses are part of the code, so they come from the code file like everything else.</li>
