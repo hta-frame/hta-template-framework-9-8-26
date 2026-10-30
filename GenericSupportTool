@@ -112,6 +112,9 @@
         background: #152038;
         color: #9099a8;
     }
+    /* Category 2 button when it is NOT selected (dark red). When it is
+       selected it turns white like Category 1 (see SetCategoryButtonState). */
+    #catBtnSeverity { background: #9A0101; color: #FFFFFF; }
     .cat-btn.active { background: #FFFFFF; color: #1F2A44; }
 
     #subNavGeneral, #subNavSeverity {
@@ -313,6 +316,15 @@ Const UpdateIconFile = "AppIcon.ico"
 ' ============================================================
 ' Configuration -- edit these to match your environment
 ' ============================================================
+
+' ---- Email font --------------------------------------------------------
+' Font and size for the text of every email the tool creates. Without
+' this, Outlook uses its own default font (Aptos in newer Office).
+' Your signature keeps its own font. Examples: "Calibri", "Arial",
+' "Segoe UI", "Times New Roman". Size examples: "10pt", "11pt", "12pt".
+Dim EmailFont, EmailFontSize
+EmailFont = "Calibri"
+EmailFontSize = "11pt"
 
 ' ---- Tab 1 CC address -----------------------------------------------
 ' Every Tab 1 "Generate Email" CCs this address in addition to the
@@ -849,6 +861,14 @@ Function SendViaOutlook(strTo, strCc, strSubject, strBodyHtml, strAttachmentPath
     ' signature after the fact. This also means we no longer need to open
     ' the compose window first and wait/race for HTMLBody to be ready
     ' before touching it: everything below can be set before Display().
+    ' Put our email text in EmailFont / EmailFontSize (see the top of the
+    ' script). The font is written on every paragraph, because Outlook
+    ' ignores a font set only on the outside wrapper. The signature is
+    ' added after this, so it keeps its own font.
+    Dim fontStyle
+    fontStyle = "font-family:'" & EmailFont & "',sans-serif;font-size:" & EmailFontSize & ";"
+    strBodyHtml = Replace(strBodyHtml, "<p>", "<p style=""" & fontStyle & """>", 1, -1, vbTextCompare)
+    strBodyHtml = "<div style=""" & fontStyle & """>" & strBodyHtml & "</div>"
     objMail.HTMLBody = strBodyHtml & LoadSignature()
 
     objMail.To = strTo
@@ -1024,11 +1044,14 @@ End Sub
 Sub SetCategoryButtonState(btn, isActive)
     On Error Resume Next
     If isActive Then
-        btn.style.backgroundColor = "#ffffff"
+        btn.style.backgroundColor = "#ffffff"       ' selected (either one): white
         btn.style.color = "#1F2A44"
+    ElseIf btn.id = "catBtnSeverity" Then
+        btn.style.backgroundColor = "#9A0101"       ' Category 2 not selected: dark red
+        btn.style.color = "#ffffff"
     Else
-        btn.style.backgroundColor = "#152038"
-        btn.style.color = "#9099a8"
+        btn.style.backgroundColor = "#4A6FA5"       ' Category 1 not selected: steel blue
+        btn.style.color = "#ffffff"
     End If
 End Sub
 
